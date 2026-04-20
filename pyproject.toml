@@ -1,0 +1,84 @@
+[project]
+name = "scout"
+version = "0.1.0"
+description = "Black-box testing, pinpoint precision."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.14"
+dependencies = [
+    "click",
+    "playwright",
+    "httpx",
+    "loguru",
+    "pyrage",
+    "ruamel.yaml",
+]
+
+[project.optional-dependencies]
+server = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy[asyncio]",
+    "alembic",
+    "asyncpg",
+    "jinja2",
+    "python-multipart",
+    "fastapi-users[sqlalchemy]",
+    "authlib",
+]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-playwright",
+    "pytest-cov",
+    "pytest-xdist",
+    "pytest-timeout",
+    "ruff",
+    "pyright",
+]
+
+[project.scripts]
+scout = "scout.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py314"
+line-length = 99
+
+[tool.ruff.lint]
+select = [
+    "E", "W",       # pycodestyle
+    "F",             # pyflakes
+    "I",             # isort
+    "N",             # pep8-naming
+    "UP",            # pyupgrade
+    "ASYNC",         # flake8-async
+    "B",             # flake8-bugbear
+    "A",             # flake8-builtins
+    "S",             # flake8-bandit (security)
+    "T20",           # flake8-print (catch stray prints)
+    "RUF",           # ruff-specific rules
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.pyright]
+pythonVersion = "3.14"
+typeCheckingMode = "standard"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+timeout = 30
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--tb=short",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "e2e: end-to-end browser tests",
+]
