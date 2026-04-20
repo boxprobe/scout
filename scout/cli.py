@@ -10,9 +10,22 @@ def main() -> None:
 
 
 @main.command()
-def run() -> None:
-    """Run test scenarios."""
-    click.echo("scout run: not yet implemented")
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--headless/--headed", default=True, help="Run browser headless (default) or headed.")
+def run(path: str, headless: bool) -> None:
+    """Run a test scenario file."""
+    import asyncio
+
+    from scout.runner import execute_file
+
+    result = asyncio.run(execute_file(path, headless=headless))
+    if result.success:
+        click.echo(f"PASSED: {path}")
+    else:
+        click.echo(f"FAILED: {path}", err=True)
+        for err in result.errors:
+            click.echo(f"  {err}", err=True)
+        raise SystemExit(1)
 
 
 @main.command()
