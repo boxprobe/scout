@@ -7,7 +7,8 @@ functions via decorators, then calls scenario.run() as the entry point.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any, Callable, Coroutine
+from collections.abc import Callable, Coroutine
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from scout.runner.page import Page

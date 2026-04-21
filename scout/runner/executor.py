@@ -73,7 +73,7 @@ async def execute_file(test_path: str | object, *, headless: bool = True) -> Exe
     from pathlib import Path
 
     path = Path(str(test_path))
-    if not path.exists():
+    if not path.exists():  # noqa: ASYNC240
         return ExecutionResult(success=False, errors=[f"File not found: {path}"])
 
     try:

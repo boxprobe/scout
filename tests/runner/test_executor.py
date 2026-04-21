@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from scout.runner.executor import ExecutionResult, execute_scenario
+from scout.runner.executor import execute_scenario
 from scout.runner.scenario import Scenario
 
 
