@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 
-from scout.config import ScoutConfig
+from scout.config import AppConfig
 from scout.git import GitInfo
 
 
@@ -26,7 +26,7 @@ class RunMetadata:
 
 def build_metadata(
     *,
-    config: ScoutConfig,
+    config: AppConfig,
     git: GitInfo,
     scenario: str,
     env: str | None = None,
@@ -45,7 +45,7 @@ def build_metadata(
         run_id=str(uuid.uuid4()),
         timestamp=datetime.now(tz=UTC).isoformat(),
         scenario=scenario,
-        app=config.app,
+        app=config.name,
         app_version=config.app_version,
         env=env,
         commit=git.commit,

@@ -1,14 +1,12 @@
 """Tests for scout.run_metadata module."""
 
-from pathlib import Path
-
-from scout.config import ScoutConfig
+from scout.config import AppConfig
 from scout.git import GitInfo
 from scout.run_metadata import build_metadata
 
 
-def _full_config() -> ScoutConfig:
-    return ScoutConfig(app="medusa-admin", app_version="2.3.1", data_dir=Path(".scout"))
+def _full_config() -> AppConfig:
+    return AppConfig(name="medusa-admin", web_base_url="http://localhost", app_version="2.3.1")
 
 
 def _full_git() -> GitInfo:
@@ -46,14 +44,14 @@ def test_build_metadata_no_git() -> None:
     assert meta.scenario == "smoke/basic.py"
 
 
-def test_build_metadata_no_config() -> None:
-    """app and app_version are None when ScoutConfig has no data."""
-    config = ScoutConfig()
+def test_build_metadata_no_app_version() -> None:
+    """app_version is None when AppConfig has no app_version."""
+    config = AppConfig(name="medusa-admin", web_base_url="http://localhost")
     git = _full_git()
 
     meta = build_metadata(config=config, git=git, scenario="regression/api.py")
 
-    assert meta.app is None
+    assert meta.app == "medusa-admin"
     assert meta.app_version is None
     assert meta.commit == git.commit
     assert meta.branch == git.branch
@@ -61,7 +59,7 @@ def test_build_metadata_no_config() -> None:
 
 def test_run_id_is_unique() -> None:
     """Two successive calls produce different run_ids."""
-    config = ScoutConfig()
+    config = AppConfig(name="test-app", web_base_url="http://localhost")
     git = GitInfo()
 
     meta1 = build_metadata(config=config, git=git, scenario="s.py")
@@ -74,7 +72,7 @@ def test_run_metadata_is_frozen() -> None:
     """RunMetadata is immutable (frozen dataclass)."""
     import pytest
 
-    config = ScoutConfig()
+    config = AppConfig(name="test-app", web_base_url="http://localhost")
     git = GitInfo()
     meta = build_metadata(config=config, git=git, scenario="s.py")
 
@@ -86,7 +84,7 @@ def test_timestamp_is_utc_iso8601() -> None:
     """timestamp is a valid ISO 8601 string ending with UTC offset."""
     from datetime import datetime
 
-    config = ScoutConfig()
+    config = AppConfig(name="test-app", web_base_url="http://localhost")
     git = GitInfo()
     meta = build_metadata(config=config, git=git, scenario="s.py")
 
