@@ -12,6 +12,8 @@ dependencies = [
     "loguru",
     "pyrage",
     "ruamel.yaml",
+    "mitmproxy>=10",
+    "aiohttp",
 ]
 
 [project.optional-dependencies]

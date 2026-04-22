@@ -1,0 +1,67 @@
+"""Control API — lightweight HTTP server for proxy session management."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from aiohttp import web
+
+if TYPE_CHECKING:
+    from scout.collector.db import RecordingDB
+
+
+class ControlServer:
+    """HTTP server exposing /session/start, /session/stop, /session/status."""
+
+    def __init__(self, db: RecordingDB, port: int = 8081) -> None:
+        self._db = db
+        self._requested_port = port
+        self._active_session_id: int | None = None
+        self._active_scenario: str | None = None
+        self._app = web.Application()
+        self._app.router.add_post("/session/start", self._handle_start)
+        self._app.router.add_post("/session/stop", self._handle_stop)
+        self._app.router.add_get("/session/status", self._handle_status)
+        self._runner: web.AppRunner | None = None
+        self._site: web.TCPSite | None = None
+        self.port: int = port
+
+    async def start(self) -> None:
+        self._runner = web.AppRunner(self._app)
+        await self._runner.setup()
+        self._site = web.TCPSite(self._runner, "127.0.0.1", self._requested_port)
+        await self._site.start()
+        # Resolve actual port (important when port=0)
+        sock = self._site._server.sockets[0]
+        self.port = sock.getsockname()[1]
+
+    async def stop(self) -> None:
+        if self._runner:
+            await self._runner.cleanup()
+
+    @property
+    def active_session_id(self) -> int | None:
+        return self._active_session_id
+
+    async def _handle_start(self, request: web.Request) -> web.Response:
+        body = await request.json()
+        scenario = body["scenario"]
+        run_id = body["run_id"]
+        sid = self._db.start_session(run_id, scenario)
+        self._active_session_id = sid
+        self._active_scenario = scenario
+        return web.json_response({"scenario_id": sid})
+
+    async def _handle_stop(self, request: web.Request) -> web.Response:
+        if self._active_session_id is not None:
+            self._db.stop_session(self._active_session_id)
+        self._active_session_id = None
+        self._active_scenario = None
+        return web.json_response({"ok": True})
+
+    async def _handle_status(self, request: web.Request) -> web.Response:
+        return web.json_response({
+            "active": self._active_session_id is not None,
+            "scenario": self._active_scenario,
+            "scenario_id": self._active_session_id,
+        })
