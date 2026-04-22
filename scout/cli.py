@@ -91,6 +91,66 @@ def runs(
 
 
 @main.command()
+@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
+@click.option(
+    "--headless/--headed",
+    default=True,
+    help="Run browser headless (default) or headed.",
+)
+@click.option(
+    "--screenshots/--no-screenshots",
+    default=True,
+    help="Take before/after screenshots (default: yes for verify).",
+)
+@click.option(
+    "--results-dir",
+    default=None,
+    type=click.Path(),
+    help="Directory to write result JSON files (default: .scout/results/).",
+)
+def verify(
+    paths: tuple[str, ...],
+    headless: bool,
+    screenshots: bool,
+    results_dir: str | None,
+) -> None:
+    """Verify one or more test scenarios (batch execution, shared browser)."""
+    import asyncio
+    from pathlib import Path
+
+    from scout.runner import execute_batch
+    from scout.runner.executor import _find_worktree_root
+
+    if results_dir:
+        out_dir = Path(results_dir)
+    else:
+        # Default: .scout/results/ in the worktree root (where app.json lives)
+        root = _find_worktree_root(Path(paths[0]))
+        out_dir = (root / ".scout" / "results") if root else Path(".scout/results")
+    results = asyncio.run(
+        execute_batch(
+            list(paths),
+            headless=headless,
+            results_dir=out_dir,
+            screenshots=screenshots,
+        )
+    )
+
+    passed = sum(1 for r in results.values() if r.success)
+    failed = len(results) - passed
+
+    for scenario_path, result in results.items():
+        status = "PASSED" if result.success else "FAILED"
+        click.echo(f"  {status}: {scenario_path} ({result.duration_ms}ms)")
+        for err in result.errors:
+            click.echo(f"    {err}", err=True)
+
+    click.echo(f"\n{passed} passed, {failed} failed")
+    if failed > 0:
+        raise SystemExit(1)
+
+
+@main.command()
 def report() -> None:
     """Generate comparison report from recorded data."""
     click.echo("scout report: not yet implemented")

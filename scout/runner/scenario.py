@@ -25,11 +25,13 @@ class Scenario:
         name: str,
         base_url: str,
         viewport_width: int = 1280,
+        viewport_height: int = 900,
         wait_ms: int = 0,
     ) -> None:
         self.name = name
         self.base_url = base_url
         self.viewport_width = viewport_width
+        self.viewport_height = viewport_height
         self.wait_ms = wait_ms
         self._setup_fn: AsyncPageFn | None = None
         self._test_fn: AsyncPageFn | None = None

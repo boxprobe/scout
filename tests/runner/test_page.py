@@ -10,10 +10,12 @@ from scout.runner.page import Page
 
 @pytest.fixture
 def mock_pw_page():
-    """Create a mock Playwright page."""
+    """Create a mock Playwright page with evaluate support for resolve()."""
     page = AsyncMock()
     page.mouse = AsyncMock()
     page.keyboard = AsyncMock()
+    # evaluate returns None by default (no dynamic resize / no filter match)
+    page.evaluate = AsyncMock(return_value=None)
     return page
 
 
@@ -35,14 +37,14 @@ async def test_goto_absolute(page, mock_pw_page):
 
 
 async def test_click(page, mock_pw_page):
-    """Click resolves locator center and clicks."""
+    """Click resolves locator and clicks at center."""
     loc = Locator(name="btn", tag="button", bbox=(100, 200, 60, 40))
     await page.click(loc)
     mock_pw_page.mouse.click.assert_called_once_with(130, 220)
 
 
 async def test_fill(page, mock_pw_page):
-    """Fill clicks the locator then types the value."""
+    """Fill resolves locator, clicks, selects all, then types."""
     loc = Locator(name="email", tag="input", bbox=(50, 100, 200, 30))
     await page.fill(loc, "test@example.com")
     mock_pw_page.mouse.click.assert_called_once_with(150, 115)
@@ -51,7 +53,22 @@ async def test_fill(page, mock_pw_page):
 
 
 async def test_hover(page, mock_pw_page):
-    """Hover moves mouse to locator center."""
+    """Hover resolves locator and moves to center."""
     loc = Locator(name="menu", tag="div", bbox=(10, 20, 100, 50))
     await page.hover(loc)
     mock_pw_page.mouse.move.assert_called_once_with(60, 45)
+
+
+async def test_click_with_registry(mock_pw_page):
+    """Page with locator registry resolves rel locators correctly."""
+    parent = Locator(name="form", tag="form", bbox=(100, 200, 400, 300))
+    child = Locator(
+        name="submit", tag="button", bbox=(0, 0, 80, 40),
+        pos_type="dxy", parent="form",
+        pos_offset={"dx": 10, "dy": 10},
+    )
+    registry = {"form": parent, "submit": child}
+    page = Page(mock_pw_page, base_url="https://example.com", locator_registry=registry)
+    await page.click(child)
+    # resolved: x=110, y=210, w=80, h=40 → center (150, 230)
+    mock_pw_page.mouse.click.assert_called_once_with(150, 230)
