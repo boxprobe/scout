@@ -11,6 +11,7 @@ import importlib.util
 import json
 import shutil
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -170,6 +171,9 @@ async def execute_batch(
     headless: bool = True,
     results_dir: Path | None = None,
     screenshots: bool = False,
+    proxy: str | None = None,
+    on_before_scenario: Callable | None = None,
+    on_after_scenario: Callable | None = None,
 ) -> dict[str, ExecutionResult]:
     """Execute multiple test.py files sharing one browser instance.
 
@@ -196,19 +200,27 @@ async def execute_batch(
 
     # Launch one browser for the entire batch
     pw_instance = await async_playwright().start()
-    browser = await pw_instance.chromium.launch(headless=headless)
+    browser = await pw_instance.chromium.launch(
+        headless=headless,
+        proxy={"server": f"http://{proxy}"} if proxy else None,
+    )
 
     try:
         for scenario_path, loaded in entries:
             if isinstance(loaded, ExecutionResult):
                 results[scenario_path] = loaded
             else:
+                if on_before_scenario:
+                    await on_before_scenario(scenario_path)
                 ss_dir = None
                 if screenshots and results_dir is not None:
                     ss_dir = results_dir / scenario_path / "screenshots"
-                results[scenario_path] = await _run_scenario_with_browser(
+                result = await _run_scenario_with_browser(
                     loaded, browser, screenshot_dir=ss_dir
                 )
+                results[scenario_path] = result
+                if on_after_scenario:
+                    await on_after_scenario(scenario_path, result)
     finally:
         await browser.close()
         await pw_instance.stop()
