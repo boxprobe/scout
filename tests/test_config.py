@@ -1,76 +1,61 @@
-"""Tests for scout/config.py — load scout.yml project configuration."""
+"""Tests for scout/config.py — load app.json project configuration."""
 
+import json
 from pathlib import Path
 
 import pytest
 
-from scout.config import ScoutConfig, load_config
+from scout.config import AppConfig, load_app_config
 
 
-def test_load_config_from_yaml(tmp_path: Path) -> None:
-    """Full config with app slug and explicit data_dir loads correctly."""
-    data_dir = tmp_path / "scout-data"
-    config_file = tmp_path / "scout.yml"
-    config_file.write_text(
-        f"app: my-app\n"
-        f"app_version: '1.2.3'\n"
-        f"data_dir: {data_dir}\n"
-    )
-
-    config = load_config(config_file)
-
-    assert config.app == "my-app"
-    assert config.app_version == "1.2.3"
-    assert config.data_dir == data_dir
-
-
-def test_load_config_defaults(tmp_path: Path) -> None:
-    """Config file without data_dir gets default .scout directory."""
-    config_file = tmp_path / "scout.yml"
-    config_file.write_text("app: my-app\n")
-
-    config = load_config(config_file)
-
-    assert config.app == "my-app"
-    assert config.data_dir == Path(".scout")
+def test_load_app_config_full(tmp_path: Path) -> None:
+    """Full app.json with all fields loads correctly."""
+    app_json = tmp_path / "app.json"
+    app_json.write_text(json.dumps({
+        "name": "Admin UI",
+        "web_base_url": "http://localhost:9000/app",
+        "api_base_url": "http://localhost:9000/admin",
+        "viewport_width": 1440,
+        "viewport_height": 900,
+    }))
+    config = load_app_config(tmp_path)
+    assert config.name == "Admin UI"
+    assert config.web_base_url == "http://localhost:9000/app"
+    assert config.api_base_url == "http://localhost:9000/admin"
+    assert config.viewport_width == 1440
 
 
-def test_load_config_no_file(tmp_path: Path) -> None:
-    """Missing scout.yml returns all defaults; app is None."""
-    config_file = tmp_path / "scout.yml"
-
-    config = load_config(config_file)
-
-    assert config.app is None
+def test_load_app_config_minimal(tmp_path: Path) -> None:
+    """Minimal app.json with only required fields."""
+    app_json = tmp_path / "app.json"
+    app_json.write_text(json.dumps({"name": "my-app", "web_base_url": "http://localhost"}))
+    config = load_app_config(tmp_path)
+    assert config.name == "my-app"
     assert config.app_version is None
-    assert config.data_dir == Path(".scout")
 
 
-def test_load_config_empty_file(tmp_path: Path) -> None:
-    """Empty scout.yml returns all defaults."""
-    config_file = tmp_path / "scout.yml"
-    config_file.write_text("")
-
-    config = load_config(config_file)
-
-    assert config.app is None
-    assert config.app_version is None
-    assert config.data_dir == Path(".scout")
-
-
-def test_data_dir_expands_tilde(tmp_path: Path) -> None:
-    """Tilde in data_dir is expanded to the user home directory."""
-    config_file = tmp_path / "scout.yml"
-    config_file.write_text("app: my-app\ndata_dir: ~/scout-data\n")
-
-    config = load_config(config_file)
-
-    assert not str(config.data_dir).startswith("~")
-    assert config.data_dir == Path("~/scout-data").expanduser()
+def test_load_app_config_with_version(tmp_path: Path) -> None:
+    """app.json with optional app_version field."""
+    app_json = tmp_path / "app.json"
+    app_json.write_text(json.dumps({
+        "name": "my-app",
+        "web_base_url": "http://localhost",
+        "app_version": "2.3.1",
+    }))
+    config = load_app_config(tmp_path)
+    assert config.app_version == "2.3.1"
 
 
-def test_scout_config_is_frozen() -> None:
-    """ScoutConfig is a frozen dataclass (immutable)."""
-    config = ScoutConfig(app="test-app")
+def test_load_app_config_no_file(tmp_path: Path) -> None:
+    """Missing app.json raises FileNotFoundError."""
+    with pytest.raises(FileNotFoundError):
+        load_app_config(tmp_path)
+
+
+def test_app_config_is_frozen(tmp_path: Path) -> None:
+    """AppConfig is immutable."""
+    app_json = tmp_path / "app.json"
+    app_json.write_text(json.dumps({"name": "x", "web_base_url": "http://x"}))
+    config = load_app_config(tmp_path)
     with pytest.raises(Exception):  # noqa: B017
-        config.app = "other"  # type: ignore[misc]
+        config.name = "other"  # type: ignore[misc]

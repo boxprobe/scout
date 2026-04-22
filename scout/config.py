@@ -1,40 +1,36 @@
-"""Load scout.yml project configuration."""
+"""Load app.json project configuration from delivery repo root."""
 
-from dataclasses import dataclass, field
+import json
+from dataclasses import dataclass
 from pathlib import Path
-
-from ruamel.yaml import YAML
 
 
 @dataclass(frozen=True)
-class ScoutConfig:
-    app: str | None = None
+class AppConfig:
+    name: str
+    web_base_url: str
+    api_base_url: str | None = None
+    viewport_width: int = 1280
+    viewport_height: int = 900
     app_version: str | None = None
-    data_dir: Path = field(default_factory=lambda: Path(".scout"))
 
 
-def load_config(path: Path) -> ScoutConfig:
-    """Load a scout.yml config file and return a ScoutConfig.
+def load_app_config(repo_root: Path) -> AppConfig:
+    """Load app.json from repo root directory.
 
-    Missing file or empty file returns all defaults (app=None).
-    Tilde in data_dir is expanded.
+    Raises FileNotFoundError if app.json does not exist.
     """
-    if not path.exists():
-        return ScoutConfig()
+    app_json = repo_root / "app.json"
+    if not app_json.exists():
+        raise FileNotFoundError(f"app.json not found in {repo_root}")
 
-    yaml = YAML()
-    data = yaml.load(path)
+    data = json.loads(app_json.read_text(encoding="utf-8"))
 
-    if not data:
-        return ScoutConfig()
-
-    app = data.get("app") or None
-    app_version = str(data["app_version"]) if data.get("app_version") is not None else None
-
-    raw_data_dir = data.get("data_dir")
-    if raw_data_dir is not None:
-        data_dir = Path(str(raw_data_dir)).expanduser()
-    else:
-        data_dir = Path(".scout")
-
-    return ScoutConfig(app=app, app_version=app_version, data_dir=data_dir)
+    return AppConfig(
+        name=data["name"],
+        web_base_url=data["web_base_url"],
+        api_base_url=data.get("api_base_url"),
+        viewport_width=data.get("viewport_width", 1280),
+        viewport_height=data.get("viewport_height", 900),
+        app_version=str(data["app_version"]) if data.get("app_version") is not None else None,
+    )
