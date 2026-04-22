@@ -10,14 +10,12 @@ from mitmproxy import http
 
 if TYPE_CHECKING:
     from scout.collector.control import ControlServer
-    from scout.collector.db import RecordingDB
 
 
 class RecordingAddon:
     """mitmproxy addon that records request/response pairs to SQLite."""
 
-    def __init__(self, db: RecordingDB, control: ControlServer) -> None:
-        self._db = db
+    def __init__(self, control: ControlServer) -> None:
         self._control = control
         self._pending: dict[str, float] = {}
 
@@ -30,13 +28,24 @@ class RecordingAddon:
             self._pending.pop(flow.id, None)
             return
 
+        db = self._control.db
+        if db is None:
+            self._pending.pop(flow.id, None)
+            return
+
+        # Only record requests matching api_base_url
+        api_base = self._control.api_base_url
+        if api_base and not flow.request.pretty_url.startswith(api_base):
+            self._pending.pop(flow.id, None)
+            return
+
         start = self._pending.pop(flow.id, None)
         duration_ms = int((time.monotonic() - start) * 1000) if start else None
 
         req = flow.request
         resp = flow.response
 
-        self._db.insert_api_record(
+        db.insert_api_record(
             scenario_id=session_id,
             method=req.method,
             url=req.pretty_url,

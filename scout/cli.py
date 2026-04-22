@@ -94,12 +94,18 @@ def run(
     if proxy and control_port:
         proxy_host = proxy.split(":")[0] or "127.0.0.1"
         control_base = f"http://{proxy_host}:{control_port}"
+        record_db = str(runs_dir / "record.db")
 
         async def on_before(scenario_path: str) -> None:  # type: ignore[no-redef]
             async with httpx.AsyncClient() as client:
                 await client.post(
                     f"{control_base}/session/start",
-                    json={"scenario": scenario_path, "run_id": run_id},
+                    json={
+                        "scenario": scenario_path,
+                        "run_id": run_id,
+                        "db_path": record_db,
+                        "api_base_url": config.api_base_url,
+                    },
                 )
 
         async def on_after(scenario_path: str, result) -> None:  # type: ignore[no-redef]
@@ -218,24 +224,18 @@ def verify(
 @main.command()
 @click.option("--port", default=8080, help="Proxy listen port.")
 @click.option("--control-port", default=8081, help="Control API port.")
-@click.option("--db", "db_path", default=None, type=click.Path(), help="Recording DB path.")
-def record(port: int, control_port: int, db_path: str | None) -> None:
-    """Start the recording proxy."""
+def record(port: int, control_port: int) -> None:
+    """Start the recording proxy.
+
+    DB path and API filter are provided per-run via /session/start.
+    """
     from scout.collector.control import ControlServer
-    from scout.collector.db import RecordingDB
 
-    repo_root = Path.cwd()
-    if db_path:
-        db_file = Path(db_path)
-    else:
-        db_file = repo_root / ".scout" / "recordings" / "record.db"
-
-    rdb = RecordingDB(db_file)
-    control = ControlServer(rdb, port=control_port)
+    control = ControlServer(port=control_port)
 
     click.echo(f"Recording proxy: :{port}")
     click.echo(f"Control API:     :{control_port}")
-    click.echo(f"Database:        {db_file}")
+    click.echo("Waiting for session/start from scout run...")
 
     async def _run_proxy() -> None:
         await control.start()
@@ -247,13 +247,12 @@ def record(port: int, control_port: int, db_path: str | None) -> None:
 
         opts = Options(listen_host="0.0.0.0", listen_port=port)
         master = DumpMaster(opts)
-        master.addons.add(RecordingAddon(rdb, control))
+        master.addons.add(RecordingAddon(control))
 
         try:
             await master.run()
         finally:
             await control.stop()
-            rdb.close()
 
     try:
         asyncio.run(_run_proxy())
