@@ -1,4 +1,4 @@
-"""Local SQLite index — one row per run for fast metadata queries."""
+"""Local SQLite index — one row per run×scenario for metadata queries."""
 
 from __future__ import annotations
 
@@ -10,7 +10,8 @@ from scout.run_metadata import RunMetadata
 
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS runs (
-    run_id        TEXT PRIMARY KEY,
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id        TEXT NOT NULL,
     timestamp     TEXT NOT NULL,
     app           TEXT,
     app_version   TEXT,
@@ -20,7 +21,8 @@ CREATE TABLE IF NOT EXISTS runs (
     branch        TEXT,
     scout_version TEXT,
     uploaded      INTEGER DEFAULT 0,
-    local_path    TEXT
+    local_path    TEXT,
+    UNIQUE(run_id, scenario)
 );
 """
 
@@ -51,7 +53,7 @@ class IndexDB:
         self._conn.executescript(_CREATE_TABLE)
 
     def insert(self, meta: RunMetadata, local_path: str | None = None) -> None:
-        """Insert a run row; silently skips duplicates (idempotent by run_id)."""
+        """Insert a run row; silently skips duplicates (idempotent by run_id+scenario)."""
         self._conn.execute(
             _INSERT,
             {

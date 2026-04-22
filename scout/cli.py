@@ -111,6 +111,7 @@ def run(
             test_paths,
             headless=headless,
             results_dir=runs_dir,
+            screenshots=False,
             proxy=proxy,
             on_before_scenario=on_before,
             on_after_scenario=on_after,

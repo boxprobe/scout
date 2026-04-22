@@ -92,7 +92,7 @@ def test_query_combined_filters(db: IndexDB) -> None:
 
 
 def test_idempotent_insert(db: IndexDB) -> None:
-    """Inserting the same run_id twice does not raise and results in one row."""
+    """Inserting the same run_id+scenario twice does not raise and results in one row."""
     meta = _make_meta(run_id="run-dup")
     db.insert(meta)
     db.insert(meta)  # should not raise
@@ -100,6 +100,18 @@ def test_idempotent_insert(db: IndexDB) -> None:
     rows = db.query()
 
     assert len(rows) == 1
+
+
+def test_multiple_scenarios_per_run(db: IndexDB) -> None:
+    """A single run_id can have multiple scenario rows."""
+    db.insert(_make_meta(run_id="run-batch", scenario="auth/login"))
+    db.insert(_make_meta(run_id="run-batch", scenario="auth/logout"))
+    db.insert(_make_meta(run_id="run-batch", scenario="checkout/cart"))
+
+    rows = db.query()
+
+    assert len(rows) == 3
+    assert all(r["run_id"] == "run-batch" for r in rows)
 
 
 def test_empty_db_query(db: IndexDB) -> None:
