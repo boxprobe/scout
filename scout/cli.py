@@ -56,17 +56,17 @@ def main() -> None:
 @main.command()
 @click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
 @click.option("--headless/--headed", default=True, help="Run headless (default) or headed.")
-@click.option("--proxy", default=None, help="Recording proxy address (e.g. localhost:8080).")
 @click.option("--env", "env_name", default=None, help="Environment name.")
 @click.option("--out", "out_dir", default=None, type=click.Path(), help="Output directory.")
 def run(
     paths: tuple[str, ...],
     headless: bool,
-    proxy: str | None,
     env_name: str | None,
     out_dir: str | None,
 ) -> None:
-    """Run test scenarios (production mode)."""
+    """Run test scenarios with API recording."""
+    from scout.collector.subprocess import ProxyProcess
+
     test_paths = _resolve_test_paths(paths)
     if not test_paths:
         click.echo("No test files found.", err=True)
@@ -82,63 +82,54 @@ def run(
     else:
         runs_dir = repo_root / ".scout" / "runs" / run_id
 
-    # Derive control port from proxy address
-    control_port = None
-    if proxy:
-        proxy_host = proxy.split(":")[0] or "127.0.0.1"
-        control_port = 8081  # default control port
-        # Check proxy reachability
-        try:
-            resp = httpx.get(f"http://{proxy_host}:{control_port}/session/status", timeout=3)
-            resp.raise_for_status()
-        except Exception:
-            click.echo(
-                f"Error: Recording proxy not reachable at {proxy_host}:{control_port}",
-                err=True,
+    # Start recording proxy
+    proxy_proc = ProxyProcess()
+    try:
+        proxy_proc.start()
+    except RuntimeError:
+        click.echo("Error: failed to start recording proxy", err=True)
+        raise SystemExit(1)
+
+    proxy = proxy_proc.proxy_addr
+    control_base = proxy_proc.control_base
+    record_db = str(runs_dir / "record.db")
+
+    async def on_before(scenario_path: str) -> None:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{control_base}/session/start",
+                json={
+                    "scenario": scenario_path,
+                    "run_id": run_id,
+                    "db_path": record_db,
+                    "api_base_url": config.api_base_url,
+                    "app": config.name,
+                    "app_version": config.app_version,
+                    "env": env_name,
+                    "commit_hash": git.commit,
+                    "branch": git.branch,
+                    "scout_version": _scout_version(),
+                },
             )
-            raise SystemExit(1)
 
-    # Build proxy session callbacks
-    on_before = None
-    on_after = None
-    if proxy and control_port:
-        proxy_host = proxy.split(":")[0] or "127.0.0.1"
-        control_base = f"http://{proxy_host}:{control_port}"
-        record_db = str(runs_dir / "record.db")
+    async def on_after(scenario_path: str, result) -> None:
+        async with httpx.AsyncClient() as client:
+            await client.post(f"{control_base}/session/stop")
 
-        async def on_before(scenario_path: str) -> None:  # type: ignore[no-redef]
-            async with httpx.AsyncClient() as client:
-                await client.post(
-                    f"{control_base}/session/start",
-                    json={
-                        "scenario": scenario_path,
-                        "run_id": run_id,
-                        "db_path": record_db,
-                        "api_base_url": config.api_base_url,
-                        "app": config.name,
-                        "app_version": config.app_version,
-                        "env": env_name,
-                        "commit_hash": git.commit,
-                        "branch": git.branch,
-                        "scout_version": _scout_version(),
-                    },
-                )
-
-        async def on_after(scenario_path: str, result) -> None:  # type: ignore[no-redef]
-            async with httpx.AsyncClient() as client:
-                await client.post(f"{control_base}/session/stop")
-
-    results = asyncio.run(
-        execute_batch(
-            test_paths,
-            headless=headless,
-            results_dir=runs_dir,
-            screenshots=False,
-            proxy=proxy,
-            on_before_scenario=on_before,
-            on_after_scenario=on_after,
+    try:
+        results = asyncio.run(
+            execute_batch(
+                test_paths,
+                headless=headless,
+                results_dir=runs_dir,
+                screenshots=False,
+                proxy=proxy,
+                on_before_scenario=on_before,
+                on_after_scenario=on_after,
+            )
         )
-    )
+    finally:
+        proxy_proc.stop()
 
     # Generate reports
     from scout.report.html import generate_html
@@ -236,44 +227,6 @@ def verify(
     if failed > 0:
         raise SystemExit(1)
 
-
-@main.command()
-@click.option("--port", default=8080, help="Proxy listen port.")
-@click.option("--control-port", default=8081, help="Control API port.")
-def record(port: int, control_port: int) -> None:
-    """Start the recording proxy.
-
-    DB path and API filter are provided per-run via /session/start.
-    """
-    from scout.collector.control import ControlServer
-
-    control = ControlServer(port=control_port)
-
-    click.echo(f"Recording proxy: :{port}")
-    click.echo(f"Control API:     :{control_port}")
-    click.echo("Waiting for session/start from scout run...")
-
-    async def _run_proxy() -> None:
-        await control.start()
-
-        from mitmproxy.options import Options
-        from mitmproxy.tools.dump import DumpMaster
-
-        from scout.collector.proxy import RecordingAddon
-
-        opts = Options(listen_host="0.0.0.0", listen_port=port)
-        master = DumpMaster(opts)
-        master.addons.add(RecordingAddon(control))
-
-        try:
-            await master.run()
-        finally:
-            await control.stop()
-
-    try:
-        asyncio.run(_run_proxy())
-    except KeyboardInterrupt:
-        click.echo("\nStopped.")
 
 
 @main.command()

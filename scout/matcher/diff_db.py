@@ -56,6 +56,13 @@ class DiffDB:
         self._conn = sqlite3.connect(path)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
+        # Clear stale data from previous runs
+        self._conn.executescript("""
+            DELETE FROM endpoint_diffs;
+            DELETE FROM missing_endpoints;
+            DELETE FROM meta;
+            DELETE FROM sqlite_sequence WHERE name IN ('endpoint_diffs', 'missing_endpoints');
+        """)
 
     def set_meta(
         self,
@@ -167,12 +174,28 @@ class DiffDB:
             "SELECT COUNT(*) FROM endpoint_diffs WHERE value_match = 0"
         ).fetchone()[0]
         missing = self._conn.execute("SELECT COUNT(*) FROM missing_endpoints").fetchone()[0]
+        base_4xx = self._conn.execute(
+            "SELECT COUNT(*) FROM endpoint_diffs WHERE baseline_status >= 400 AND baseline_status < 500"
+        ).fetchone()[0]
+        base_5xx = self._conn.execute(
+            "SELECT COUNT(*) FROM endpoint_diffs WHERE baseline_status >= 500"
+        ).fetchone()[0]
+        target_4xx = self._conn.execute(
+            "SELECT COUNT(*) FROM endpoint_diffs WHERE target_status >= 400 AND target_status < 500"
+        ).fetchone()[0]
+        target_5xx = self._conn.execute(
+            "SELECT COUNT(*) FROM endpoint_diffs WHERE target_status >= 500"
+        ).fetchone()[0]
         return {
             "total_paired": paired,
             "status_mismatches": status_mm,
             "structure_mismatches": struct_mm,
             "value_mismatches": value_mm,
             "missing_endpoints": missing,
+            "baseline_4xx": base_4xx,
+            "baseline_5xx": base_5xx,
+            "target_4xx": target_4xx,
+            "target_5xx": target_5xx,
         }
 
     def close(self) -> None:

@@ -55,6 +55,7 @@ def generate_diff_html(
 
         row = (
             f'<tr>'
+            f'<td style="color:#666">{idx + 1}</td>'
             f'<td>{d["method"]}</td>'
             f'<td>{d["path"]}</td>'
             f'<td style="color:{status_color}">{status_icon} {d.get("baseline_status", "")}'
@@ -83,7 +84,7 @@ def generate_diff_html(
             t_dur_str = f"{t_dur}ms" if t_dur is not None else ""
             row += (
                 f'<tr id="detail-{idx}" style="display:none">'
-                f'<td colspan="7" style="padding:12px 8px">'
+                f'<td colspan="8" style="padding:12px 8px">'
                 f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'
                 f'<div><div class="detail-label">Baseline</div>'
                 f'<div class="detail-meta">{b_ts}{"&nbsp;&nbsp;" + b_dur_str if b_dur_str else ""}</div>'
@@ -101,11 +102,12 @@ def generate_diff_html(
         diff_rows.append(row)
 
     missing_rows = []
-    for m in missing:
+    for mi, m in enumerate(missing):
         side_label = "Added" if m["side"] == "target" else "Removed"
         side_color = "#facc15" if m["side"] == "target" else "#ef4444"
         missing_rows.append(
             f'<tr>'
+            f'<td style="color:#666">{mi + 1}</td>'
             f'<td style="color:{side_color}">{side_label}</td>'
             f'<td>{m["method"]}</td>'
             f'<td>{m["path"]}</td>'
@@ -164,16 +166,20 @@ function toggle(id) {{
   <span style="color:#f59e0b">{value_changes} value changes</span>
   <span style="color:#facc15">{summary['missing_endpoints']} endpoint changes</span>
 </div>
+<div class="summary">
+  <span>Baseline: {summary.get('baseline_4xx', 0)} 4xx, {summary.get('baseline_5xx', 0)} 5xx</span>
+  <span>Target: {summary.get('target_4xx', 0)} 4xx, {summary.get('target_5xx', 0)} 5xx</span>
+</div>
 
 <h2>Endpoint Comparison</h2>
 <table>
-<thead><tr><th>Method</th><th>Path</th><th>Status</th><th>Structure</th><th>Value</th><th>Details</th>{"<th></th>" if has_detail else ""}</tr></thead>
+<thead><tr><th>#</th><th>Method</th><th>Path</th><th>Status</th><th>Structure</th><th>Value</th><th>Details</th>{"<th></th>" if has_detail else ""}</tr></thead>
 <tbody>
-{"".join(diff_rows) if diff_rows else '<tr><td colspan="7" style="color:#888">No paired endpoints</td></tr>'}
+{"".join(diff_rows) if diff_rows else '<tr><td colspan="8" style="color:#888">No paired endpoints</td></tr>'}
 </tbody>
 </table>
 
-{"<h2>Endpoint Changes</h2>" + chr(10) + '<table>' + chr(10) + '<thead><tr><th>Change</th><th>Method</th><th>Path</th><th>Status</th></tr></thead>' + chr(10) + '<tbody>' + chr(10) + "".join(missing_rows) + chr(10) + '</tbody>' + chr(10) + '</table>' if missing_rows else ""}
+{"<h2>Endpoint Changes</h2>" + chr(10) + '<table>' + chr(10) + '<thead><tr><th>#</th><th>Change</th><th>Method</th><th>Path</th><th>Status</th></tr></thead>' + chr(10) + '<tbody>' + chr(10) + "".join(missing_rows) + chr(10) + '</tbody>' + chr(10) + '</table>' if missing_rows else ""}
 
 </body>
 </html>"""
