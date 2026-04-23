@@ -50,3 +50,17 @@ def test_cli_verify_missing_path() -> None:
     runner = CliRunner()
     result = runner.invoke(main, ["verify"])
     assert result.exit_code != 0
+
+
+def test_cli_diff_missing_args() -> None:
+    """diff with no args shows error."""
+    runner = CliRunner()
+    result = runner.invoke(main, ["diff"])
+    assert result.exit_code != 0
+
+
+def test_cli_diff_in_help() -> None:
+    """diff command appears in --help."""
+    runner = CliRunner()
+    result = runner.invoke(main, ["--help"])
+    assert "diff" in result.output

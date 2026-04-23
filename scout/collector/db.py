@@ -84,6 +84,10 @@ class RecordingDB:
         ).fetchone()
         return dict(row)
 
+    def get_all_sessions(self) -> list[dict[str, Any]]:
+        rows = self._conn.execute("SELECT * FROM scenarios ORDER BY id").fetchall()
+        return [dict(r) for r in rows]
+
     def insert_api_record(
         self,
         *,

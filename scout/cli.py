@@ -330,3 +330,153 @@ def upload() -> None:
 def analyze() -> None:
     """Analyze API recordings for regression detection."""
     click.echo("scout analyze: not yet implemented")
+
+
+@main.command()
+@click.argument("baseline", required=True)
+@click.argument("target", required=True)
+@click.option("--detail/--no-detail", default=False, help="Include raw request/response data in diff.")
+def diff(baseline: str, target: str, detail: bool) -> None:
+    """Compare API recordings between two runs."""
+    from scout.collector.db import RecordingDB
+    from scout.matcher.align import align_records
+    from scout.matcher.compare import compare_pair
+    from scout.matcher.diff_db import DiffDB
+    from scout.matcher.diff_report import generate_diff_html
+
+    repo_root = Path.cwd()
+    scout_dir = repo_root / ".scout"
+
+    # Find record.db files
+    base_db_path = scout_dir / "runs" / baseline / "record.db"
+    target_db_path = scout_dir / "runs" / target / "record.db"
+
+    if not base_db_path.exists():
+        click.echo(f"Error: baseline record.db not found: {base_db_path}", err=True)
+        raise SystemExit(1)
+    if not target_db_path.exists():
+        click.echo(f"Error: target record.db not found: {target_db_path}", err=True)
+        raise SystemExit(1)
+
+    base_rdb = RecordingDB(base_db_path)
+    target_rdb = RecordingDB(target_db_path)
+
+    # Read scenarios
+    base_sessions = base_rdb.get_all_sessions()
+    target_sessions = target_rdb.get_all_sessions()
+
+    if not base_sessions or not target_sessions:
+        click.echo("Error: no recording sessions found in one or both runs.", err=True)
+        raise SystemExit(1)
+
+    base_s = dict(base_sessions[0])
+    target_s = dict(target_sessions[0])
+
+    # Validate app + scenario match
+    if base_s.get("app") != target_s.get("app"):
+        click.echo(
+            f"Error: app mismatch — baseline '{base_s.get('app')}' vs target '{target_s.get('app')}'",
+            err=True,
+        )
+        raise SystemExit(1)
+    if base_s.get("scenario") != target_s.get("scenario"):
+        click.echo(
+            f"Error: scenario mismatch — baseline '{base_s.get('scenario')}' vs target '{target_s.get('scenario')}'",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    # Load records
+    base_records = base_rdb.get_api_records(base_s["id"])
+    target_records = target_rdb.get_api_records(target_s["id"])
+    base_rdb.close()
+    target_rdb.close()
+
+    # Align
+    aligned = align_records(base_records, target_records)
+
+    # Compare + write results
+    diff_dir = scout_dir / "diffs" / f"{baseline}_vs_{target}"
+    ddb = DiffDB(diff_dir / "diff.db")
+    ddb.set_meta(
+        baseline_run_id=baseline,
+        target_run_id=target,
+        app=base_s.get("app") or "",
+        scenario=base_s.get("scenario") or "",
+    )
+
+    def _detail_kwargs(rec: dict, prefix: str) -> dict:
+        """Extract raw data kwargs for insert_endpoint_diff when --detail."""
+        if not detail:
+            return {}
+        return {
+            f"{prefix}_url": rec.get("url"),
+            f"{prefix}_request": rec.get("request_body"),
+            f"{prefix}_response": rec.get("response_body"),
+            f"{prefix}_timestamp": rec.get("timestamp"),
+            f"{prefix}_duration": rec.get("duration_ms"),
+        }
+
+    for pair in aligned:
+        if pair.baseline is not None and pair.target is not None:
+            result = compare_pair(pair.baseline, pair.target)
+            ddb.insert_endpoint_diff(
+                baseline_record_id=pair.baseline.get("id"),
+                target_record_id=pair.target.get("id"),
+                method=pair.method,
+                path=pair.path,
+                status_match=result.status_match,
+                baseline_status=result.baseline_status,
+                target_status=result.target_status,
+                structure_match=result.structure_match,
+                diff_summary=result.diff_summary,
+                value_match=result.value_match,
+                value_diff=result.value_diff,
+                **_detail_kwargs(pair.baseline, "baseline"),
+                **_detail_kwargs(pair.target, "target"),
+            )
+        elif pair.baseline is not None:
+            ddb.insert_missing_endpoint(
+                side="baseline",
+                record_id=pair.baseline.get("id", 0),
+                method=pair.method,
+                path=pair.path,
+                status_code=pair.baseline.get("status_code"),
+            )
+        elif pair.target is not None:
+            ddb.insert_missing_endpoint(
+                side="target",
+                record_id=pair.target.get("id", 0),
+                method=pair.method,
+                path=pair.path,
+                status_code=pair.target.get("status_code"),
+            )
+
+    # Generate report
+    meta = ddb.get_meta()
+    diffs = ddb.get_endpoint_diffs()
+    missing = ddb.get_missing_endpoints()
+    summary = ddb.summary()
+    ddb.close()
+
+    generate_diff_html(meta, diffs, missing, summary, diff_dir / "report.html")
+
+    # Print summary
+    has_issues = summary["status_mismatches"] + summary["structure_mismatches"] + summary["missing_endpoints"]
+    value_changes = summary.get("value_mismatches", 0)
+    if has_issues:
+        click.echo(f"REGRESSION: {summary['status_mismatches']} status, "
+                    f"{summary['structure_mismatches']} structure, "
+                    f"{value_changes} value, "
+                    f"{summary['missing_endpoints']} endpoint changes")
+    elif value_changes:
+        click.echo(f"SCHEMA_OK: {summary['total_paired']} endpoints, "
+                    f"{value_changes} value changes")
+    else:
+        click.echo(f"OK: {summary['total_paired']} endpoints compared, no regression")
+
+    click.echo(f"Report: {diff_dir / 'report.html'}")
+    click.echo(f"Data:   {diff_dir / 'diff.db'}")
+
+    if has_issues:
+        raise SystemExit(1)
