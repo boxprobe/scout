@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import click
@@ -74,7 +75,7 @@ def run(
     repo_root = _find_repo_root(test_paths)
     config = load_app_config(repo_root)
     git = git_info(repo_root)
-    run_id = str(uuid.uuid4())[:8]
+    run_id = datetime.now(UTC).strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4]
 
     if out_dir:
         runs_dir = Path(out_dir)
