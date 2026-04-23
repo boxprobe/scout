@@ -30,10 +30,10 @@ def test_insert_api_record(db: RecordingDB) -> None:
     db.insert_api_record(
         scenario_id=sid, method="POST", url="http://localhost:9000/admin/auth",
         request_headers='{"Content-Type":"application/json"}',
-        request_body=b'{"email":"test@test.com"}',
+        request_body='{"email":"test@test.com"}',
         status_code=200,
         response_headers='{"Content-Type":"application/json"}',
-        response_body=b'{"token":"abc"}',
+        response_body='{"token":"abc"}',
         duration_ms=45,
     )
     records = db.get_api_records(sid)

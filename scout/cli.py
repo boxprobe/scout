@@ -9,9 +9,18 @@ from pathlib import Path
 import click
 import httpx
 
+from importlib.metadata import PackageNotFoundError, version
+
 from scout.config import load_app_config
 from scout.git import git_info
 from scout.runner.executor import _find_worktree_root, execute_batch
+
+
+def _scout_version() -> str:
+    try:
+        return version("scout")
+    except PackageNotFoundError:
+        return "dev"
 
 
 def _resolve_test_paths(paths: tuple[str, ...]) -> list[str]:
@@ -105,6 +114,12 @@ def run(
                         "run_id": run_id,
                         "db_path": record_db,
                         "api_base_url": config.api_base_url,
+                        "app": config.name,
+                        "app_version": config.app_version,
+                        "env": env_name,
+                        "commit_hash": git.commit,
+                        "branch": git.branch,
+                        "scout_version": _scout_version(),
                     },
                 )
 

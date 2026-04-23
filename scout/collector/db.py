@@ -9,11 +9,17 @@ from typing import Any
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS scenarios (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id      TEXT NOT NULL,
-    scenario    TEXT NOT NULL,
-    started_at  TEXT NOT NULL,
-    stopped_at  TEXT,
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id         TEXT NOT NULL,
+    scenario       TEXT NOT NULL,
+    app            TEXT,
+    app_version    TEXT,
+    env            TEXT,
+    commit_hash    TEXT,
+    branch         TEXT,
+    scout_version  TEXT,
+    started_at     TEXT NOT NULL,
+    stopped_at     TEXT,
     UNIQUE(run_id, scenario)
 );
 
@@ -24,10 +30,10 @@ CREATE TABLE IF NOT EXISTS api_records (
     method           TEXT NOT NULL,
     url              TEXT NOT NULL,
     request_headers  TEXT,
-    request_body     BLOB,
+    request_body     TEXT,
     status_code      INTEGER,
     response_headers TEXT,
-    response_body    BLOB,
+    response_body    TEXT,
     duration_ms      INTEGER
 );
 """
@@ -42,10 +48,25 @@ class RecordingDB:
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
 
-    def start_session(self, run_id: str, scenario: str) -> int:
+    def start_session(
+        self,
+        run_id: str,
+        scenario: str,
+        *,
+        app: str | None = None,
+        app_version: str | None = None,
+        env: str | None = None,
+        commit_hash: str | None = None,
+        branch: str | None = None,
+        scout_version: str | None = None,
+    ) -> int:
         cursor = self._conn.execute(
-            "INSERT INTO scenarios (run_id, scenario, started_at) VALUES (?, ?, ?)",
-            (run_id, scenario, datetime.now(UTC).isoformat()),
+            """INSERT INTO scenarios
+               (run_id, scenario, app, app_version, env, commit_hash, branch,
+                scout_version, started_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (run_id, scenario, app, app_version, env, commit_hash, branch,
+             scout_version, datetime.now(UTC).isoformat()),
         )
         self._conn.commit()
         return cursor.lastrowid
@@ -71,9 +92,9 @@ class RecordingDB:
         url: str,
         status_code: int | None = None,
         request_headers: str | None = None,
-        request_body: bytes | None = None,
+        request_body: str | None = None,
         response_headers: str | None = None,
-        response_body: bytes | None = None,
+        response_body: str | None = None,
         duration_ms: int | None = None,
     ) -> None:
         self._conn.execute(

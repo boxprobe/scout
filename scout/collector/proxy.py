@@ -50,9 +50,9 @@ class RecordingAddon:
             method=req.method,
             url=req.pretty_url,
             request_headers=json.dumps(dict(req.headers)),
-            request_body=req.content,
+            request_body=req.text if req.content else None,
             status_code=resp.status_code if resp else None,
             response_headers=json.dumps(dict(resp.headers)) if resp else None,
-            response_body=resp.content if resp else None,
+            response_body=resp.text if resp and resp.content else None,
             duration_ms=duration_ms,
         )

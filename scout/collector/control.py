@@ -73,7 +73,16 @@ class ControlServer:
         # URL filter: only record requests matching this prefix
         self._api_base_url = body.get("api_base_url")
 
-        sid = self._db.start_session(run_id, scenario)
+        sid = self._db.start_session(
+            run_id,
+            scenario,
+            app=body.get("app"),
+            app_version=body.get("app_version"),
+            env=body.get("env"),
+            commit_hash=body.get("commit_hash"),
+            branch=body.get("branch"),
+            scout_version=body.get("scout_version"),
+        )
         self._active_session_id = sid
         self._active_scenario = scenario
         return web.json_response({"scenario_id": sid})
