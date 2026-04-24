@@ -14,6 +14,11 @@ def _esc(s: str) -> str:
     return _html.escape(s)
 
 
+def _display_scenario(s: str) -> str:
+    """Convert scenario path to display format: auth/login-success → auth.login-success."""
+    return s.replace("/", ".")
+
+
 def _format_body(body: str | None) -> str:
     if not body:
         return "<em>empty</em>"
@@ -33,7 +38,6 @@ def generate_diff_html(
 ) -> None:
     """Write a self-contained HTML diff report."""
     app = meta.get("app", "")
-    scenario = meta.get("scenario", "")
     baseline = meta.get("baseline_run_id", "")
     target = meta.get("target_run_id", "")
 
@@ -53,20 +57,28 @@ def generate_diff_html(
         val_diff = d.get("value_diff", "") or ""
         val_diff_html = _esc(val_diff).replace("\n", "<br>").replace(" ", "&nbsp;") if val_diff else ""
 
+        b_status = d.get("baseline_status", "")
+        t_status = d.get("target_status", "")
+        row_scenario = d.get("scenario", "")
         row = (
-            f'<tr>'
+            f'<tr class="diff-row" data-method="{d["method"]}" data-path="{_esc(d["path"].lower())}"'
+            f' data-scenario="{_esc(_display_scenario(row_scenario).lower())}" data-status="{b_status} {t_status}">'
             f'<td style="color:#666">{idx + 1}</td>'
+            f'<td style="font-size:12px;color:#a5b4fc;">{_display_scenario(row_scenario)}</td>'
             f'<td>{d["method"]}</td>'
             f'<td>{d["path"]}</td>'
             f'<td style="color:{status_color}">{status_icon} {d.get("baseline_status", "")}'
             f'{"→" + str(d.get("target_status", "")) if not d["status_match"] else ""}</td>'
             f'<td style="color:{struct_color}">{struct_icon}</td>'
             f'<td style="color:{val_color}">{val_icon}</td>'
-            f'<td style="font-size:11px;font-family:monospace;color:#888">{detail_html}'
-            f'{"<br>" if detail_html and val_diff_html else ""}{val_diff_html}</td>'
+            f'<td style="font-size:11px;font-family:monospace;color:#888">'
         )
         if has_detail:
-            row += f'<td><button onclick="toggle(\'detail-{idx}\')">▶</button></td>'
+            row += f"<span onclick=\"toggle('detail-{idx}')\" style=\"cursor:pointer;color:#888;font-size:16px;\">⋯</span>"
+        row += (
+            f'{detail_html}'
+            f'{"<br>" if detail_html and val_diff_html else ""}{val_diff_html}</td>'
+        )
         row += '</tr>'
 
         if has_detail:
@@ -108,6 +120,7 @@ def generate_diff_html(
         missing_rows.append(
             f'<tr>'
             f'<td style="color:#666">{mi + 1}</td>'
+            f'<td style="font-size:12px;color:#a5b4fc;">{_display_scenario(m.get("scenario", ""))}</td>'
             f'<td style="color:{side_color}">{side_label}</td>'
             f'<td>{m["method"]}</td>'
             f'<td>{m["path"]}</td>'
@@ -124,7 +137,7 @@ def generate_diff_html(
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Scout Diff — {app} — {scenario}</title>
+<title>Scout Diff — {app}</title>
 <style>
   body {{ font-family: -apple-system, system-ui, sans-serif; margin: 40px; background: #0a0a0a; color: #e5e5e5; }}
   h1 {{ font-size: 20px; font-weight: 600; }}
@@ -145,16 +158,38 @@ def generate_diff_html(
   .detail-body {{ font-size: 11px; font-family: monospace; background: #111; padding: 8px; border-radius: 4px; max-height: 300px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 4px 0 8px 0; color: #ccc; }}
 </style>
 <script>
+document.addEventListener('DOMContentLoaded', function() {{ filterRows(''); }});
 function toggle(id) {{
   var el = document.getElementById(id);
   el.style.display = el.style.display === 'none' ? 'table-row' : 'none';
+}}
+function filterRows(q) {{
+  var kw = q.trim();
+  var field = document.getElementById('filter-field').value;
+  var rows = document.querySelectorAll('.diff-row');
+  var total = rows.length, visible = 0;
+  rows.forEach(function(row) {{
+    if (!kw) {{ row.style.display = ''; visible++; return; }}
+    var match = false;
+    if (field === 'method' || field === 'all') match = match || row.dataset.method === kw.toUpperCase();
+    if (field === 'path' || field === 'all') match = match || row.dataset.path.indexOf(kw.toLowerCase()) !== -1;
+    if (field === 'scenario' || field === 'all') match = match || row.dataset.scenario.indexOf(kw.toLowerCase()) !== -1;
+    if (field === 'status' || field === 'all') match = match || row.dataset.status.indexOf(kw) !== -1;
+    row.style.display = match ? '' : 'none';
+    if (match) visible++;
+    var detail = row.nextElementSibling;
+    if (detail && detail.id && detail.id.startsWith('detail-')) {{
+      if (!match) detail.style.display = 'none';
+    }}
+  }});
+  var el = document.getElementById('filter-count');
+  el.textContent = kw ? visible + ' / ' + total : total + ' rows';
 }}
 </script>
 </head>
 <body>
 <h1>Scout Diff — {app}</h1>
 <div class="meta">
-  <span>Scenario: {scenario}</span>
   <span>Baseline: {baseline}</span>
   <span>Target: {target}</span>
 </div>
@@ -172,14 +207,27 @@ function toggle(id) {{
 </div>
 
 <h2>Endpoint Comparison</h2>
+<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
+  <select id="filter-field" onchange="filterRows(document.getElementById('filter-input').value)"
+    style="padding:6px 8px;background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:13px;">
+    <option value="all">All</option>
+    <option value="method">Method</option>
+    <option value="path">Path</option>
+    <option value="scenario">Scenario</option>
+    <option value="status">Status</option>
+  </select>
+  <input id="filter-input" type="text" placeholder="Filter…" oninput="filterRows(this.value)"
+    style="width:260px;padding:6px 10px;background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:13px;outline:none;">
+  <span id="filter-count" style="font-size:12px;color:#888;"></span>
+</div>
 <table>
-<thead><tr><th>#</th><th>Method</th><th>Path</th><th>Status</th><th>Structure</th><th>Value</th><th>Details</th>{"<th></th>" if has_detail else ""}</tr></thead>
+<thead><tr><th>#</th><th>Scenario</th><th>Method</th><th>Path</th><th>Status</th><th>Structure</th><th>Value</th><th>Details</th></tr></thead>
 <tbody>
 {"".join(diff_rows) if diff_rows else '<tr><td colspan="8" style="color:#888">No paired endpoints</td></tr>'}
 </tbody>
 </table>
 
-{"<h2>Endpoint Changes</h2>" + chr(10) + '<table>' + chr(10) + '<thead><tr><th>#</th><th>Change</th><th>Method</th><th>Path</th><th>Status</th></tr></thead>' + chr(10) + '<tbody>' + chr(10) + "".join(missing_rows) + chr(10) + '</tbody>' + chr(10) + '</table>' if missing_rows else ""}
+{"<h2>Endpoint Changes</h2>" + chr(10) + '<table>' + chr(10) + '<thead><tr><th>#</th><th>Scenario</th><th>Change</th><th>Method</th><th>Path</th><th>Status</th></tr></thead>' + chr(10) + '<tbody>' + chr(10) + "".join(missing_rows) + chr(10) + '</tbody>' + chr(10) + '</table>' if missing_rows else ""}
 
 </body>
 </html>"""

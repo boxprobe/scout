@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS meta (
 
 CREATE TABLE IF NOT EXISTS endpoint_diffs (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    scenario           TEXT,
     baseline_record_id INTEGER,
     target_record_id   INTEGER,
     method             TEXT NOT NULL,
@@ -39,6 +40,7 @@ CREATE TABLE IF NOT EXISTS endpoint_diffs (
 
 CREATE TABLE IF NOT EXISTS missing_endpoints (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    scenario    TEXT,
     side        TEXT NOT NULL,
     record_id   INTEGER NOT NULL,
     method      TEXT NOT NULL,
@@ -55,27 +57,24 @@ class DiffDB:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(path)
         self._conn.row_factory = sqlite3.Row
-        self._conn.executescript(_SCHEMA)
-        # Clear stale data from previous runs
+        # Drop and recreate to ensure schema is up-to-date
         self._conn.executescript("""
-            DELETE FROM endpoint_diffs;
-            DELETE FROM missing_endpoints;
-            DELETE FROM meta;
-            DELETE FROM sqlite_sequence WHERE name IN ('endpoint_diffs', 'missing_endpoints');
+            DROP TABLE IF EXISTS endpoint_diffs;
+            DROP TABLE IF EXISTS missing_endpoints;
+            DROP TABLE IF EXISTS meta;
         """)
+        self._conn.executescript(_SCHEMA)
 
     def set_meta(
         self,
         baseline_run_id: str,
         target_run_id: str,
         app: str,
-        scenario: str,
     ) -> None:
         for key, value in [
             ("baseline_run_id", baseline_run_id),
             ("target_run_id", target_run_id),
             ("app", app),
-            ("scenario", scenario),
         ]:
             self._conn.execute(
                 "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
@@ -90,6 +89,7 @@ class DiffDB:
     def insert_endpoint_diff(
         self,
         *,
+        scenario: str = "",
         baseline_record_id: int | None,
         target_record_id: int | None,
         method: str,
@@ -114,15 +114,15 @@ class DiffDB:
     ) -> None:
         self._conn.execute(
             """INSERT INTO endpoint_diffs
-               (baseline_record_id, target_record_id, method, path,
+               (scenario, baseline_record_id, target_record_id, method, path,
                 status_match, baseline_status, target_status,
                 structure_match, diff_summary, value_match, value_diff,
                 baseline_url, baseline_request, baseline_response,
                 baseline_timestamp, baseline_duration,
                 target_url, target_request, target_response,
                 target_timestamp, target_duration)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (baseline_record_id, target_record_id, method, path,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (scenario, baseline_record_id, target_record_id, method, path,
              int(status_match), baseline_status, target_status,
              int(structure_match), diff_summary,
              int(value_match), value_diff,
@@ -136,6 +136,7 @@ class DiffDB:
     def insert_missing_endpoint(
         self,
         *,
+        scenario: str = "",
         side: str,
         record_id: int,
         method: str,
@@ -144,9 +145,9 @@ class DiffDB:
     ) -> None:
         self._conn.execute(
             """INSERT INTO missing_endpoints
-               (side, record_id, method, path, status_code)
-               VALUES (?, ?, ?, ?, ?)""",
-            (side, record_id, method, path, status_code),
+               (scenario, side, record_id, method, path, status_code)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (scenario, side, record_id, method, path, status_code),
         )
         self._conn.commit()
 

@@ -50,7 +50,6 @@ def test_set_and_get_meta(db: DiffDB) -> None:
         baseline_run_id="20260423-a",
         target_run_id="20260423-b",
         app="medusa-admin",
-        scenario="auth/login-success",
     )
     meta = db.get_meta()
     assert meta["baseline_run_id"] == "20260423-a"

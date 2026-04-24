@@ -314,39 +314,16 @@ def diff(baseline: str, target: str, detail: bool) -> None:
     base_rdb = RecordingDB(base_db_path)
     target_rdb = RecordingDB(target_db_path)
 
-    # Read scenarios
-    base_sessions = base_rdb.get_all_sessions()
-    target_sessions = target_rdb.get_all_sessions()
+    # Read all sessions and index by scenario
+    base_sessions = {dict(s)["scenario"]: dict(s) for s in base_rdb.get_all_sessions()}
+    target_sessions = {dict(s)["scenario"]: dict(s) for s in target_rdb.get_all_sessions()}
 
     if not base_sessions or not target_sessions:
         click.echo("Error: no recording sessions found in one or both runs.", err=True)
         raise SystemExit(1)
 
-    base_s = dict(base_sessions[0])
-    target_s = dict(target_sessions[0])
-
-    # Validate app + scenario match
-    if base_s.get("app") != target_s.get("app"):
-        click.echo(
-            f"Error: app mismatch — baseline '{base_s.get('app')}' vs target '{target_s.get('app')}'",
-            err=True,
-        )
-        raise SystemExit(1)
-    if base_s.get("scenario") != target_s.get("scenario"):
-        click.echo(
-            f"Error: scenario mismatch — baseline '{base_s.get('scenario')}' vs target '{target_s.get('scenario')}'",
-            err=True,
-        )
-        raise SystemExit(1)
-
-    # Load records
-    base_records = base_rdb.get_api_records(base_s["id"])
-    target_records = target_rdb.get_api_records(target_s["id"])
-    base_rdb.close()
-    target_rdb.close()
-
-    # Align
-    aligned = align_records(base_records, target_records)
+    # Determine app name from first session
+    app_name = next(iter(base_sessions.values())).get("app", "")
 
     # Compare + write results
     diff_dir = scout_dir / "diffs" / f"{baseline}_vs_{target}"
@@ -354,8 +331,7 @@ def diff(baseline: str, target: str, detail: bool) -> None:
     ddb.set_meta(
         baseline_run_id=baseline,
         target_run_id=target,
-        app=base_s.get("app") or "",
-        scenario=base_s.get("scenario") or "",
+        app=app_name,
     )
 
     def _detail_kwargs(rec: dict, prefix: str) -> dict:
@@ -370,40 +346,81 @@ def diff(baseline: str, target: str, detail: bool) -> None:
             f"{prefix}_duration": rec.get("duration_ms"),
         }
 
-    for pair in aligned:
-        if pair.baseline is not None and pair.target is not None:
-            result = compare_pair(pair.baseline, pair.target)
-            ddb.insert_endpoint_diff(
-                baseline_record_id=pair.baseline.get("id"),
-                target_record_id=pair.target.get("id"),
-                method=pair.method,
-                path=pair.path,
-                status_match=result.status_match,
-                baseline_status=result.baseline_status,
-                target_status=result.target_status,
-                structure_match=result.structure_match,
-                diff_summary=result.diff_summary,
-                value_match=result.value_match,
-                value_diff=result.value_diff,
-                **_detail_kwargs(pair.baseline, "baseline"),
-                **_detail_kwargs(pair.target, "target"),
-            )
-        elif pair.baseline is not None:
-            ddb.insert_missing_endpoint(
-                side="baseline",
-                record_id=pair.baseline.get("id", 0),
-                method=pair.method,
-                path=pair.path,
-                status_code=pair.baseline.get("status_code"),
-            )
-        elif pair.target is not None:
-            ddb.insert_missing_endpoint(
-                side="target",
-                record_id=pair.target.get("id", 0),
-                method=pair.method,
-                path=pair.path,
-                status_code=pair.target.get("status_code"),
-            )
+    # Process each scenario present in either run
+    all_scenarios = sorted(set(base_sessions) | set(target_sessions))
+    for scenario_name in all_scenarios:
+        base_s = base_sessions.get(scenario_name)
+        target_s = target_sessions.get(scenario_name)
+
+        if base_s and target_s:
+            base_records = base_rdb.get_api_records(base_s["id"])
+            target_records = target_rdb.get_api_records(target_s["id"])
+            aligned = align_records(base_records, target_records)
+
+            for pair in aligned:
+                if pair.baseline is not None and pair.target is not None:
+                    result = compare_pair(pair.baseline, pair.target)
+                    ddb.insert_endpoint_diff(
+                        scenario=scenario_name,
+                        baseline_record_id=pair.baseline.get("id"),
+                        target_record_id=pair.target.get("id"),
+                        method=pair.method,
+                        path=pair.path,
+                        status_match=result.status_match,
+                        baseline_status=result.baseline_status,
+                        target_status=result.target_status,
+                        structure_match=result.structure_match,
+                        diff_summary=result.diff_summary,
+                        value_match=result.value_match,
+                        value_diff=result.value_diff,
+                        **_detail_kwargs(pair.baseline, "baseline"),
+                        **_detail_kwargs(pair.target, "target"),
+                    )
+                elif pair.baseline is not None:
+                    ddb.insert_missing_endpoint(
+                        scenario=scenario_name,
+                        side="baseline",
+                        record_id=pair.baseline.get("id", 0),
+                        method=pair.method,
+                        path=pair.path,
+                        status_code=pair.baseline.get("status_code"),
+                    )
+                elif pair.target is not None:
+                    ddb.insert_missing_endpoint(
+                        scenario=scenario_name,
+                        side="target",
+                        record_id=pair.target.get("id", 0),
+                        method=pair.method,
+                        path=pair.path,
+                        status_code=pair.target.get("status_code"),
+                    )
+        elif base_s:
+            # Scenario only in baseline — all endpoints removed
+            for rec in base_rdb.get_api_records(base_s["id"]):
+                from scout.matcher.normalize import normalize_url
+                ddb.insert_missing_endpoint(
+                    scenario=scenario_name,
+                    side="baseline",
+                    record_id=rec.get("id", 0),
+                    method=rec["method"],
+                    path=normalize_url(rec["url"]),
+                    status_code=rec.get("status_code"),
+                )
+        else:
+            # Scenario only in target — all endpoints added
+            for rec in target_rdb.get_api_records(target_s["id"]):
+                from scout.matcher.normalize import normalize_url
+                ddb.insert_missing_endpoint(
+                    scenario=scenario_name,
+                    side="target",
+                    record_id=rec.get("id", 0),
+                    method=rec["method"],
+                    path=normalize_url(rec["url"]),
+                    status_code=rec.get("status_code"),
+                )
+
+    base_rdb.close()
+    target_rdb.close()
 
     # Generate report
     meta = ddb.get_meta()
