@@ -34,3 +34,17 @@ def load_app_config(repo_root: Path) -> AppConfig:
         viewport_height=data.get("viewport_height", 900),
         app_version=str(data["app_version"]) if data.get("app_version") is not None else None,
     )
+
+
+def override_urls(config: AppConfig, base_url: str | None, api_url: str | None) -> AppConfig:
+    """Return a new AppConfig with URL overrides applied."""
+    if not base_url and not api_url:
+        return config
+    return AppConfig(
+        name=config.name,
+        web_base_url=base_url or config.web_base_url,
+        api_base_url=api_url or config.api_base_url,
+        viewport_width=config.viewport_width,
+        viewport_height=config.viewport_height,
+        app_version=config.app_version,
+    )

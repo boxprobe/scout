@@ -174,6 +174,7 @@ async def execute_batch(
     proxy: str | None = None,
     on_before_scenario: Callable | None = None,
     on_after_scenario: Callable | None = None,
+    base_url_override: str | None = None,
 ) -> dict[str, ExecutionResult]:
     """Execute multiple test.py files sharing one browser instance.
 
@@ -210,6 +211,8 @@ async def execute_batch(
             if isinstance(loaded, ExecutionResult):
                 results[scenario_path] = loaded
             else:
+                if base_url_override:
+                    loaded.base_url = base_url_override
                 if on_before_scenario:
                     await on_before_scenario(scenario_path)
                 ss_dir = None

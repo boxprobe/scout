@@ -12,7 +12,7 @@ import httpx
 
 from importlib.metadata import PackageNotFoundError, version
 
-from scout.config import load_app_config
+from scout.config import load_app_config, override_urls
 from scout.git import git_info
 from scout.runner.executor import _find_worktree_root, execute_batch
 
@@ -58,11 +58,15 @@ def main() -> None:
 @click.option("--headless/--headed", default=True, help="Run headless (default) or headed.")
 @click.option("--env", "env_name", default=None, help="Environment name.")
 @click.option("--out", "out_dir", default=None, type=click.Path(), help="Output directory.")
+@click.option("--web-base-url", default=None, help="Override web_base_url from app.json.")
+@click.option("--api-base-url", default=None, help="Override api_base_url from app.json.")
 def run(
     paths: tuple[str, ...],
     headless: bool,
     env_name: str | None,
     out_dir: str | None,
+    web_base_url: str | None,
+    api_base_url: str | None,
 ) -> None:
     """Run test scenarios with API recording."""
     from scout.collector.subprocess import ProxyProcess
@@ -73,7 +77,7 @@ def run(
         raise SystemExit(1)
 
     repo_root = _find_repo_root(test_paths)
-    config = load_app_config(repo_root)
+    config = override_urls(load_app_config(repo_root), web_base_url, api_base_url)
     git = git_info(repo_root)
     run_id = datetime.now(UTC).strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4]
 
@@ -126,6 +130,7 @@ def run(
                 proxy=proxy,
                 on_before_scenario=on_before,
                 on_after_scenario=on_after,
+                base_url_override=web_base_url,
             )
         )
     finally:
@@ -186,11 +191,15 @@ def run(
     help="Take before/after screenshots (default: yes).",
 )
 @click.option("--out", "out_dir", default=None, type=click.Path(), help="Output directory.")
+@click.option("--web-base-url", default=None, help="Override web_base_url from app.json.")
+@click.option("--api-base-url", default=None, help="Override api_base_url from app.json.")
 def verify(
     paths: tuple[str, ...],
     headless: bool,
     screenshots: bool,
     out_dir: str | None,
+    web_base_url: str | None,
+    api_base_url: str | None,
 ) -> None:
     """Verify scenarios (debug mode with screenshots)."""
     test_paths = _resolve_test_paths(paths)
@@ -211,6 +220,7 @@ def verify(
             headless=headless,
             results_dir=results_dir,
             screenshots=screenshots,
+            base_url_override=web_base_url,
         )
     )
 
