@@ -128,6 +128,14 @@ async def execute_file(test_path: str | object, *, headless: bool = True) -> Exe
     return await execute_scenario(loaded, headless=headless)
 
 
+def _scout_version() -> str:
+    from importlib.metadata import PackageNotFoundError, version
+    try:
+        return version("scout")
+    except PackageNotFoundError:
+        return "dev"
+
+
 def _result_to_dict(result: ExecutionResult) -> dict[str, Any]:
     """Convert ExecutionResult to a JSON-serializable dict."""
     return {
@@ -135,6 +143,7 @@ def _result_to_dict(result: ExecutionResult) -> dict[str, Any]:
         "errors": result.errors,
         "duration_ms": result.duration_ms,
         "timestamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "scout_version": _scout_version(),
     }
 
 
