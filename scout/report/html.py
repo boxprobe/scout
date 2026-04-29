@@ -16,21 +16,25 @@ def generate_html(
     *,
     run_id: str = "",
     app_name: str = "",
+    wall_ms: int | None = None,
 ) -> None:
     passed = sum(1 for r in results.values() if r.success)
     failed = len(results) - passed
-    total_ms = sum(r.duration_ms for r in results.values())
+    total_ms = wall_ms if wall_ms is not None else sum(r.duration_ms for r in results.values())
     timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     rows = []
-    for path, result in results.items():
+    for idx, (path, result) in enumerate(results.items(), 1):
         status = "PASSED" if result.success else "FAILED"
         color = "#4ade80" if result.success else "#ef4444"
         errors = "<br>".join(result.errors) if result.errors else ""
+        display_name = path.replace("/", ".")
+        duration = f"{result.duration_ms:,}ms"
         rows.append(
-            f'<tr><td>{path}</td>'
+            f'<tr><td style="color:#666">{idx}</td>'
+            f'<td>{display_name}</td>'
             f'<td style="color:{color};font-weight:600">{status}</td>'
-            f'<td>{result.duration_ms}ms</td>'
+            f'<td>{duration}</td>'
             f'<td style="font-size:12px;color:#888">{errors}</td></tr>'
         )
 
@@ -57,11 +61,11 @@ def generate_html(
   <span>Run: {run_id}</span>
   <span style="color:#4ade80">{passed} passed</span>
   <span style="color:#ef4444">{failed} failed</span>
-  <span>{total_ms}ms</span>
+  <span>{total_ms:,}ms</span>
   <span>{timestamp}</span>
 </div>
 <table>
-<thead><tr><th>Scenario</th><th>Status</th><th>Duration</th><th>Errors</th></tr></thead>
+<thead><tr><th>#</th><th>Scenario</th><th>Status</th><th>Duration</th><th>Errors</th></tr></thead>
 <tbody>
 {table_rows}
 </tbody>

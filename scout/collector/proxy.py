@@ -12,20 +12,29 @@ if TYPE_CHECKING:
     from scout.collector.control import ControlServer
 
 
+_SESSION_HEADER = "X-Scout-Session"
+
+
 class RecordingAddon:
     """mitmproxy addon that records request/response pairs to SQLite."""
 
     def __init__(self, control: ControlServer) -> None:
         self._control = control
-        self._pending: dict[str, float] = {}
+        self._pending: dict[str, tuple[float, str | None]] = {}  # flow_id → (start_time, scenario)
 
     def request(self, flow: http.HTTPFlow) -> None:
-        self._pending[flow.id] = time.monotonic()
+        # Extract and strip session header before forwarding
+        scenario = flow.request.headers.pop(_SESSION_HEADER, None)
+        self._pending[flow.id] = (time.monotonic(), scenario)
 
     def response(self, flow: http.HTTPFlow) -> None:
-        session_id = self._control.active_session_id
+        entry = self._pending.pop(flow.id, None)
+        if entry is None:
+            return
+        start_time, scenario = entry
+
+        session_id = self._control.session_id_for(scenario) if scenario else None
         if session_id is None:
-            self._pending.pop(flow.id, None)
             return
 
         db = self._control.db
@@ -39,8 +48,7 @@ class RecordingAddon:
             self._pending.pop(flow.id, None)
             return
 
-        start = self._pending.pop(flow.id, None)
-        duration_ms = int((time.monotonic() - start) * 1000) if start else None
+        duration_ms = int((time.monotonic() - start_time) * 1000)
 
         req = flow.request
         resp = flow.response

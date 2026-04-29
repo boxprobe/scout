@@ -14,10 +14,11 @@ def test_generate_html_report(tmp_path: Path) -> None:
     out = tmp_path / "report.html"
     generate_html(results, out, run_id="run-001", app_name="medusa-admin")
     html = out.read_text()
-    assert "auth/login" in html
-    assert "auth/logout" in html
+    assert "auth.login" in html
+    assert "auth.logout" in html
     assert "PASSED" in html
     assert "FAILED" in html
+    assert "3,000ms" in html
     assert "medusa-admin" in html
 
 

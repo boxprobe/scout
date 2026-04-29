@@ -17,8 +17,8 @@ class ControlServer:
     def __init__(self, db: RecordingDB | None = None, port: int = 8081) -> None:
         self._db = db
         self._requested_port = port
-        self._active_session_id: int | None = None
-        self._active_scenario: str | None = None
+        # Concurrent session support: scenario_path → session_id
+        self._sessions: dict[str, int] = {}
         self._api_base_url: str | None = None
         self._app = web.Application()
         self._app.router.add_post("/session/start", self._handle_start)
@@ -41,9 +41,9 @@ class ControlServer:
         if self._runner:
             await self._runner.cleanup()
 
-    @property
-    def active_session_id(self) -> int | None:
-        return self._active_session_id
+    def session_id_for(self, scenario: str) -> int | None:
+        """Look up session_id by scenario path (used by proxy addon)."""
+        return self._sessions.get(scenario)
 
     @property
     def api_base_url(self) -> str | None:
@@ -83,21 +83,19 @@ class ControlServer:
             branch=body.get("branch"),
             scout_version=body.get("scout_version"),
         )
-        self._active_session_id = sid
-        self._active_scenario = scenario
+        self._sessions[scenario] = sid
         return web.json_response({"scenario_id": sid})
 
     async def _handle_stop(self, request: web.Request) -> web.Response:
-        if self._active_session_id is not None and self._db is not None:
-            self._db.stop_session(self._active_session_id)
-        self._active_session_id = None
-        self._active_scenario = None
-        self._api_base_url = None
+        body = await request.json()
+        scenario = body.get("scenario")
+        sid = self._sessions.pop(scenario, None) if scenario else None
+        if sid is not None and self._db is not None:
+            self._db.stop_session(sid)
         return web.json_response({"ok": True})
 
     async def _handle_status(self, request: web.Request) -> web.Response:
         return web.json_response({
-            "active": self._active_session_id is not None,
-            "scenario": self._active_scenario,
-            "scenario_id": self._active_session_id,
+            "active": len(self._sessions) > 0,
+            "sessions": self._sessions,
         })

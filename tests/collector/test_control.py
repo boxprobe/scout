@@ -35,7 +35,10 @@ async def test_session_start_stop(server: ControlServer, db: RecordingDB) -> Non
         data = resp.json()
         assert data["scenario_id"] > 0
 
-        resp = await client.post(f"{base}/session/stop")
+        resp = await client.post(
+            f"{base}/session/stop",
+            json={"scenario": "auth/login"},
+        )
         assert resp.status_code == 200
 
         resp = await client.get(f"{base}/session/status")
@@ -54,7 +57,7 @@ async def test_session_status_when_active(server: ControlServer) -> None:
         assert resp.status_code == 200
         body = resp.json()
         assert body["active"] is True
-        assert body["scenario"] == "auth/login"
+        assert "auth/login" in body["sessions"]
 
 
 async def test_per_run_db(tmp_path: Path) -> None:
@@ -78,7 +81,9 @@ async def test_per_run_db(tmp_path: Path) -> None:
             assert db_file.exists()
             assert srv.api_base_url == "http://localhost:9000/admin"
 
-            await client.post(f"{base}/session/stop")
-            assert srv.api_base_url is None
+            await client.post(
+                f"{base}/session/stop",
+                json={"scenario": "auth/login"},
+            )
     finally:
         await srv.stop()

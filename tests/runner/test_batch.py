@@ -106,8 +106,8 @@ async def test_execute_batch_writes_results(tmp_path):
     assert results["auth/logout"].success is True
 
     # Result files written
-    login_result = results_dir / "auth" / "login.json"
-    logout_result = results_dir / "auth" / "logout.json"
+    login_result = results_dir / "auth" / "login" / "result.json"
+    logout_result = results_dir / "auth" / "logout" / "result.json"
     assert login_result.exists()
     assert logout_result.exists()
 

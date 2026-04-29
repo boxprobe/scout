@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -60,6 +61,8 @@ def main() -> None:
 @click.option("--out", "out_dir", default=None, type=click.Path(), help="Output directory.")
 @click.option("--web-base-url", default=None, help="Override web_base_url from app.json.")
 @click.option("--api-base-url", default=None, help="Override api_base_url from app.json.")
+@click.option("--concurrency", default=10, type=click.IntRange(1, 50),
+              help="Max parallel scenarios (default: 10, max: 50).")
 def run(
     paths: tuple[str, ...],
     headless: bool,
@@ -67,6 +70,7 @@ def run(
     out_dir: str | None,
     web_base_url: str | None,
     api_base_url: str | None,
+    concurrency: int,
 ) -> None:
     """Run test scenarios with API recording."""
     from scout.collector.subprocess import ProxyProcess
@@ -118,9 +122,13 @@ def run(
 
     async def on_after(scenario_path: str, result) -> None:
         async with httpx.AsyncClient() as client:
-            await client.post(f"{control_base}/session/stop")
+            await client.post(
+                f"{control_base}/session/stop",
+                json={"scenario": scenario_path},
+            )
 
     try:
+        t_wall = time.monotonic()
         results = asyncio.run(
             execute_batch(
                 test_paths,
@@ -131,8 +139,10 @@ def run(
                 on_before_scenario=on_before,
                 on_after_scenario=on_after,
                 base_url_override=web_base_url,
+                max_concurrency=concurrency,
             )
         )
+        wall_ms = int((time.monotonic() - t_wall) * 1000)
     finally:
         proxy_proc.stop()
 
@@ -141,7 +151,8 @@ def run(
     from scout.report.junit import generate_junit
 
     generate_junit(results, runs_dir / "junit.xml", run_id=run_id)
-    generate_html(results, runs_dir / "report.html", run_id=run_id, app_name=config.name)
+    generate_html(results, runs_dir / "report.html", run_id=run_id, app_name=config.name,
+                  wall_ms=wall_ms)
 
     # Record to index
     from scout.index import IndexDB

@@ -7,6 +7,7 @@ and error capture. Supports both single-file and batch execution.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import json
 import shutil
@@ -64,13 +65,17 @@ async def _run_scenario_with_browser(
     browser: Any,
     *,
     screenshot_dir: Path | None = None,
+    extra_http_headers: dict[str, str] | None = None,
 ) -> ExecutionResult:
     """Execute a scenario using an existing browser instance."""
     scenario._validate()
 
-    context = await browser.new_context(
-        viewport={"width": scenario.viewport_width, "height": scenario.viewport_height},
-    )
+    ctx_kwargs: dict[str, Any] = {
+        "viewport": {"width": scenario.viewport_width, "height": scenario.viewport_height},
+    }
+    if extra_http_headers:
+        ctx_kwargs["extra_http_headers"] = extra_http_headers
+    context = await browser.new_context(**ctx_kwargs)
     pw_page = await context.new_page()
     page = Page(
         pw_page,
@@ -100,7 +105,8 @@ async def _run_scenario_with_browser(
             await pw_page.screenshot(
                 path=screenshot_dir / "error.png",
             )
-        return ExecutionResult(success=False, errors=[str(exc)], duration_ms=duration)
+        msg = str(exc) or f"{type(exc).__name__} (no message)"
+        return ExecutionResult(success=False, errors=[msg], duration_ms=duration)
     finally:
         await context.close()
 
@@ -184,11 +190,12 @@ async def execute_batch(
     on_before_scenario: Callable | None = None,
     on_after_scenario: Callable | None = None,
     base_url_override: str | None = None,
+    max_concurrency: int = 10,
 ) -> dict[str, ExecutionResult]:
     """Execute multiple test.py files sharing one browser instance.
 
-    Results are written to results_dir as individual JSON files.
-    When screenshots=True, before/after screenshots are saved per scenario.
+    Scenarios run in parallel up to max_concurrency. Results are written
+    to results_dir as individual JSON files.
     Returns a dict mapping scenario_path → ExecutionResult.
     """
     # Load all scenarios first (fail fast on import errors)
@@ -208,6 +215,38 @@ async def execute_batch(
 
     results: dict[str, ExecutionResult] = {}
 
+    # Handle pre-failed entries (import errors, missing files) without launching browser
+    runnable = []
+    for scenario_path, loaded in entries:
+        if isinstance(loaded, ExecutionResult):
+            results[scenario_path] = loaded
+        else:
+            runnable.append((scenario_path, loaded))
+
+    if not runnable:
+        return results
+
+    sem = asyncio.Semaphore(max_concurrency)
+
+    async def _run_one(scenario_path: str, loaded: Scenario) -> None:
+        async with sem:
+            if base_url_override:
+                loaded.base_url = base_url_override
+            if on_before_scenario:
+                await on_before_scenario(scenario_path)
+            ss_dir = None
+            if screenshots and results_dir is not None:
+                ss_dir = results_dir / scenario_path / "screenshots"
+            # Tag requests with scenario path for proxy session attribution
+            extra_headers = {"X-Scout-Session": scenario_path} if proxy else None
+            result = await _run_scenario_with_browser(
+                loaded, browser, screenshot_dir=ss_dir,
+                extra_http_headers=extra_headers,
+            )
+            results[scenario_path] = result
+            if on_after_scenario:
+                await on_after_scenario(scenario_path, result)
+
     # Launch one browser for the entire batch
     pw_instance = await async_playwright().start()
     browser = await pw_instance.chromium.launch(
@@ -216,23 +255,10 @@ async def execute_batch(
     )
 
     try:
-        for scenario_path, loaded in entries:
-            if isinstance(loaded, ExecutionResult):
-                results[scenario_path] = loaded
-            else:
-                if base_url_override:
-                    loaded.base_url = base_url_override
-                if on_before_scenario:
-                    await on_before_scenario(scenario_path)
-                ss_dir = None
-                if screenshots and results_dir is not None:
-                    ss_dir = results_dir / scenario_path / "screenshots"
-                result = await _run_scenario_with_browser(
-                    loaded, browser, screenshot_dir=ss_dir
-                )
-                results[scenario_path] = result
-                if on_after_scenario:
-                    await on_after_scenario(scenario_path, result)
+        await asyncio.gather(*[
+            _run_one(scenario_path, loaded)
+            for scenario_path, loaded in runnable
+        ])
     finally:
         await browser.close()
         await pw_instance.stop()
