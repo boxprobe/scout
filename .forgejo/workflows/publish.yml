@@ -16,7 +16,7 @@ jobs:
           git reset --hard FETCH_HEAD
 
           # Build
-          curl -LsSf https://astral.sh/uv/install.sh | sh
+          wget -qO- https://astral.sh/uv/install.sh | sh
           export PATH="$HOME/.local/bin:$PATH"
           rm -rf dist/
           uv build
