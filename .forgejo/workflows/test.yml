@@ -8,9 +8,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.14"
-      - run: uv sync --group dev
-      - run: uv run pytest tests/ -x --tb=short
+      - name: Checkout and run tests
+        run: |
+          FORGEJO_TOKEN=$(grep -E '^FORGEJO_TOKEN=' /takumi/qa/.env.qa | cut -d= -f2-)
+          cd /takumi/qa/scout || { git clone "http://oauth2:${FORGEJO_TOKEN}@forgejo:3000/core/scout.git" /takumi/qa/scout && cd /takumi/qa/scout; }
+          git fetch "http://oauth2:${FORGEJO_TOKEN}@forgejo:3000/core/scout.git" main
+          git reset --hard FETCH_HEAD
+          uv sync --group dev
+          uv run pytest tests/ -x --tb=short
