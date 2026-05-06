@@ -3,6 +3,8 @@ name: Publish Scout
 on:
   push:
     branches: [main]
+    paths:
+      - "pyproject.toml"
 
 jobs:
   publish:
