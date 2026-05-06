@@ -10,6 +10,8 @@ jobs:
     steps:
       - name: Checkout and run tests
         run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          export PATH="$HOME/.local/bin:$PATH"
           FORGEJO_TOKEN=$(grep -E '^FORGEJO_TOKEN=' /takumi/qa/.env.qa | cut -d= -f2-)
           cd /takumi/qa/scout || { git clone "http://oauth2:${FORGEJO_TOKEN}@forgejo:3000/core/scout.git" /takumi/qa/scout && cd /takumi/qa/scout; }
           git fetch "http://oauth2:${FORGEJO_TOKEN}@forgejo:3000/core/scout.git" main
