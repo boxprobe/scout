@@ -7,6 +7,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      UV_LINK_MODE: copy
     steps:
       - name: Checkout and run tests
         run: |
