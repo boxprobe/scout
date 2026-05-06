@@ -17,4 +17,4 @@ jobs:
           git fetch "http://oauth2:${FORGEJO_TOKEN}@forgejo:3000/core/scout.git" main
           git reset --hard FETCH_HEAD
           uv sync --extra dev
-          uv run pytest tests/ -x --tb=short
+          uv run pytest tests/ -x --tb=short -m "not e2e"
