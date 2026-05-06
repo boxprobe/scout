@@ -16,5 +16,5 @@ jobs:
           cd /takumi/qa/scout || { git clone "http://oauth2:${FORGEJO_TOKEN}@forgejo:3000/core/scout.git" /takumi/qa/scout && cd /takumi/qa/scout; }
           git fetch "http://oauth2:${FORGEJO_TOKEN}@forgejo:3000/core/scout.git" main
           git reset --hard FETCH_HEAD
-          uv sync --group dev
+          uv sync --extra dev
           uv run pytest tests/ -x --tb=short
