@@ -27,20 +27,20 @@ def page(mock_pw_page):
 async def test_goto_relative(page, mock_pw_page):
     """Relative URL prepends base_url."""
     await page.goto("/login")
-    mock_pw_page.goto.assert_called_once_with("https://example.com/login")
+    mock_pw_page.goto.assert_called_once_with("https://example.com/login", wait_until="networkidle")
 
 
 async def test_goto_absolute(page, mock_pw_page):
     """Absolute URL used as-is."""
     await page.goto("https://other.com/page")
-    mock_pw_page.goto.assert_called_once_with("https://other.com/page")
+    mock_pw_page.goto.assert_called_once_with("https://other.com/page", wait_until="networkidle")
 
 
 async def test_click(page, mock_pw_page):
     """Click resolves locator and clicks at center."""
     loc = Locator(name="btn", tag="button", bbox=(100, 200, 60, 40))
     await page.click(loc)
-    mock_pw_page.mouse.click.assert_called_once_with(130, 220)
+    mock_pw_page.mouse.click.assert_called_once_with(130, 220, delay=100)
 
 
 async def test_fill(page, mock_pw_page):
@@ -71,7 +71,7 @@ async def test_click_with_registry(mock_pw_page):
     page = Page(mock_pw_page, base_url="https://example.com", locator_registry=registry)
     await page.click(child)
     # resolved: x=110, y=210, w=80, h=40 → center (150, 230)
-    mock_pw_page.mouse.click.assert_called_once_with(150, 230)
+    mock_pw_page.mouse.click.assert_called_once_with(150, 230, delay=100)
 
 
 async def test_select_option(page, mock_pw_page):
