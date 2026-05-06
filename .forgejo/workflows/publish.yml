@@ -1,0 +1,28 @@
+name: Publish Scout
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build and publish to Forgejo Package Registry
+        run: |
+          FORGEJO_TOKEN=$(grep -E '^FORGEJO_TOKEN=' /takumi/qa/.env.qa | cut -d= -f2-)
+          cd /takumi/qa/scout || { git clone "http://oauth2:${FORGEJO_TOKEN}@forgejo:3000/core/scout.git" /takumi/qa/scout && cd /takumi/qa/scout; }
+          git fetch "http://oauth2:${FORGEJO_TOKEN}@forgejo:3000/core/scout.git" main
+          git reset --hard FETCH_HEAD
+
+          # Build
+          pip install uv 2>/dev/null || true
+          rm -rf dist/
+          uv build
+
+          # Publish
+          uv publish \
+            --publish-url http://forgejo:3000/api/packages/core/pypi \
+            --username __token__ \
+            --password "${FORGEJO_TOKEN}" \
+            dist/*
