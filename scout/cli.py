@@ -196,7 +196,7 @@ def run(
 
 @main.command()
 @click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
-@click.option("--headless/--headed", default=False, help="Run headed (default) or headless.")
+@click.option("--headless/--headed", default=True, help="Run headless (default) or headed.")
 @click.option(
     "--screenshots/--no-screenshots", default=True,
     help="Take before/after screenshots (default: yes).",
@@ -213,6 +213,8 @@ def verify(
     api_base_url: str | None,
 ) -> None:
     """Verify scenarios (debug mode with screenshots)."""
+    import shutil
+
     test_paths = _resolve_test_paths(paths)
     if not test_paths:
         click.echo("No test files found.", err=True)
@@ -225,6 +227,11 @@ def verify(
     else:
         results_dir = repo_root / ".scout" / "results"
 
+    # Clean previous results
+    if results_dir.exists():
+        shutil.rmtree(results_dir)
+
+    t_wall = time.monotonic()
     results = asyncio.run(
         execute_batch(
             test_paths,
@@ -233,6 +240,18 @@ def verify(
             screenshots=screenshots,
             base_url_override=web_base_url,
         )
+    )
+    wall_ms = int((time.monotonic() - t_wall) * 1000)
+
+    # Generate verify report with screenshot gallery
+    from scout.report.verify_html import generate_verify_html
+
+    config = load_app_config(repo_root)
+    generate_verify_html(
+        results, results_dir / "report.html",
+        results_dir=results_dir,
+        app_name=config.name,
+        wall_ms=wall_ms,
     )
 
     passed = sum(1 for r in results.values() if r.success)
@@ -245,6 +264,7 @@ def verify(
             click.echo(f"    {err}", err=True)
 
     click.echo(f"\n{passed} passed, {failed} failed")
+    click.echo(f"Report: {results_dir / 'report.html'}")
     if failed > 0:
         raise SystemExit(1)
 

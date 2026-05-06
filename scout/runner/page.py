@@ -38,6 +38,8 @@ class Page:
 
     async def _scroll_and_resolve(self, locator: Locator) -> tuple[int, int]:
         """Scroll to locator's annotation-time position, then resolve coordinates."""
+        # Auto-register locator so parent lookups work for rel/dxy
+        self._registry[locator.name] = locator
         # Scroll to the position where the element was annotated
         await self._page.evaluate(f"window.scrollTo(0, {locator.scroll_y})")
         await locator.resolve(self._page, self._registry)
@@ -99,7 +101,9 @@ class Page:
         await self._mark_target(x, y)
         await self._screenshot(1)
         await self._clear_marker()
-        await self._page.mouse.click(x, y)
+        await self._page.mouse.move(x, y)
+        await asyncio.sleep(0.15)
+        await self._page.mouse.click(x, y, delay=100)
         await self._screenshot(2)
 
     async def fill(self, locator: Locator, value: str) -> None:
@@ -109,9 +113,33 @@ class Page:
         await self._mark_target(x, y)
         await self._screenshot(1)
         await self._clear_marker()
+        await self._page.mouse.move(x, y)
+        await asyncio.sleep(0.15)
         await self._page.mouse.click(x, y)
         await self._page.keyboard.press("Control+a")
         await self._page.keyboard.type(value)
+        await self._screenshot(2)
+
+    async def select_option(self, locator: Locator, value: str) -> None:
+        """Scroll, resolve locator, and select an <option> by value."""
+        self._step_counter += 1
+        x, y = await self._scroll_and_resolve(locator)
+        await self._mark_target(x, y)
+        await self._screenshot(1)
+        await self._clear_marker()
+        # Use Playwright's native select_option via evaluate on the element at coordinates
+        await self._page.evaluate(
+            """([x, y, val]) => {
+                const el = document.elementFromPoint(x, y);
+                if (!el || el.tagName !== 'SELECT') throw new Error('No <select> at target');
+                const nativeSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+                if (nativeSetter) nativeSetter.call(el, val);
+                else el.value = val;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            }""",
+            [x, y, value],
+        )
         await self._screenshot(2)
 
     async def hover(self, locator: Locator) -> None:
