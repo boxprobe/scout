@@ -16,8 +16,8 @@ jobs:
           git reset --hard FETCH_HEAD
 
           # Build
-          wget -qO- https://astral.sh/uv/install.sh | sh
-          export PATH="$HOME/.local/bin:$PATH"
+          UV_URL="https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-unknown-linux-gnu.tar.gz"
+          wget -qO- "$UV_URL" | tar xz -C /usr/local/bin --strip-components=1
           rm -rf dist/
           uv build
 
