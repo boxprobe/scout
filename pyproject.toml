@@ -1,6 +1,6 @@
 [project]
 name = "scout"
-version = "0.1.2"
+version = "0.1.3"
 description = "Black-box testing, pinpoint precision."
 readme = "README.md"
 license = "MIT"
