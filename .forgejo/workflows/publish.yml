@@ -16,7 +16,7 @@ jobs:
           git reset --hard FETCH_HEAD
 
           # Build
-          UV_URL="https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-unknown-linux-gnu.tar.gz"
+          UV_URL="https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-unknown-linux-musl.tar.gz"
           wget -qO- "$UV_URL" | tar xz -C /usr/local/bin --strip-components=1
           rm -rf dist/
           uv build

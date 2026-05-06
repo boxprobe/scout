@@ -10,7 +10,7 @@ jobs:
     steps:
       - name: Checkout and run tests
         run: |
-          UV_URL="https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-unknown-linux-gnu.tar.gz"
+          UV_URL="https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-unknown-linux-musl.tar.gz"
           wget -qO- "$UV_URL" | tar xz -C /usr/local/bin --strip-components=1
           FORGEJO_TOKEN=$(grep -E '^FORGEJO_TOKEN=' /takumi/qa/.env.qa | cut -d= -f2-)
           cd /takumi/qa/scout || { git clone "http://oauth2:${FORGEJO_TOKEN}@forgejo:3000/core/scout.git" /takumi/qa/scout && cd /takumi/qa/scout; }
