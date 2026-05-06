@@ -72,3 +72,13 @@ async def test_click_with_registry(mock_pw_page):
     await page.click(child)
     # resolved: x=110, y=210, w=80, h=40 → center (150, 230)
     mock_pw_page.mouse.click.assert_called_once_with(150, 230)
+
+
+async def test_select_option(page, mock_pw_page):
+    """select_option resolves locator and evaluates JS to set <select> value."""
+    loc = Locator(name="country", tag="select", bbox=(100, 200, 150, 30))
+    await page.select_option(loc, "us")
+    mock_pw_page.evaluate.assert_called()
+    # Last evaluate call is the select_option JS (earlier calls are scroll + marker)
+    args = mock_pw_page.evaluate.call_args
+    assert args[0][1] == [pytest.approx(175, abs=1), pytest.approx(215, abs=1), "us"]
