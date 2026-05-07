@@ -34,6 +34,12 @@ class TestDetectValueType:
     def test_mock_name(self):
         assert detect_value_type("test-a1b2c3d4") == "mock_name"
 
+    def test_mock_name_concatenated(self):
+        assert detect_value_type("test-2c4daatest-28861e") == "mock_name"
+
+    def test_mock_name_triple(self):
+        assert detect_value_type("test-abcdeftest-123456test-789abc") == "mock_name"
+
     def test_mock_email(self):
         assert detect_value_type("test-abcd1234@example.com") == "mock_email"
 

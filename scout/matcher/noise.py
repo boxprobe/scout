@@ -64,7 +64,10 @@ def _endpoint_matches(pattern: str, method: str, path: str) -> bool:
 
 # -- Value type detectors --
 
-_DETECTORS: dict[str, re.Pattern[str]] = {
+from scout.mock_vars import MOCK_DETECTORS as _MOCK_DETECTORS
+
+# Built-in type detectors (non-mock patterns)
+_BUILTIN_DETECTORS: dict[str, re.Pattern[str]] = {
     "uuid": re.compile(
         r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
         re.IGNORECASE,
@@ -74,12 +77,6 @@ _DETECTORS: dict[str, re.Pattern[str]] = {
     ),
     "unix_timestamp": re.compile(
         r"^1[6-9]\d{8}$"  # 2020-2033 range in seconds
-    ),
-    "mock_name": re.compile(
-        r"^test-[0-9a-f]{4,}$"
-    ),
-    "mock_email": re.compile(
-        r"^test-[0-9a-f]+@example\.com$"
     ),
     "date": re.compile(
         r"^\d{4}-\d{2}-\d{2}$"
@@ -91,6 +88,9 @@ _DETECTORS: dict[str, re.Pattern[str]] = {
         r"^[a-z]{2,}_{1}[0-9A-Za-z]{20,}$"
     ),
 }
+
+# Merge: built-in + mock detectors from mock_vars registry
+_DETECTORS: dict[str, re.Pattern[str]] = {**_BUILTIN_DETECTORS, **_MOCK_DETECTORS}
 
 
 def detect_value_type(value: Any) -> str | None:
