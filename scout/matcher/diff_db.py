@@ -70,11 +70,15 @@ class DiffDB:
         baseline_run_id: str,
         target_run_id: str,
         app: str,
+        baseline_version: str = "",
+        target_version: str = "",
     ) -> None:
         for key, value in [
             ("baseline_run_id", baseline_run_id),
             ("target_run_id", target_run_id),
             ("app", app),
+            ("baseline_version", baseline_version),
+            ("target_version", target_version),
         ]:
             self._conn.execute(
                 "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",

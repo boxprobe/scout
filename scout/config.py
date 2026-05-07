@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from scout.matcher.noise import DiffIgnoreConfig, load_diff_ignore
+
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -12,7 +14,7 @@ class AppConfig:
     api_base_url: str | None = None
     viewport_width: int = 1280
     viewport_height: int = 900
-    app_version: str | None = None
+    diff_ignore: DiffIgnoreConfig = DiffIgnoreConfig()
 
 
 def load_app_config(repo_root: Path) -> AppConfig:
@@ -32,7 +34,7 @@ def load_app_config(repo_root: Path) -> AppConfig:
         api_base_url=data.get("api_base_url"),
         viewport_width=data.get("viewport_width", 1280),
         viewport_height=data.get("viewport_height", 900),
-        app_version=str(data["app_version"]) if data.get("app_version") is not None else None,
+        diff_ignore=load_diff_ignore(data.get("diff_ignore")),
     )
 
 
@@ -46,5 +48,5 @@ def override_urls(config: AppConfig, base_url: str | None, api_url: str | None) 
         api_base_url=api_url or config.api_base_url,
         viewport_width=config.viewport_width,
         viewport_height=config.viewport_height,
-        app_version=config.app_version,
+        diff_ignore=config.diff_ignore,
     )

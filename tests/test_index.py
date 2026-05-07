@@ -17,10 +17,12 @@ def _make_meta(**overrides) -> RunMetadata:
         "timestamp": "2026-01-01T00:00:00+00:00",
         "scenario": "tests/login.py",
         "app": "medusa-admin",
-        "app_version": "2.3.1",
+        "web_version": "2.3.1",
+        "api_version": "2.3.1",
         "env": "staging",
-        "commit": "abc123",
-        "branch": "main",
+        "web_commit": "abc123",
+        "api_commit": "abc123",
+        "scenario_commit": "def789",
         "scout_version": "0.1.0",
     }
     defaults.update(overrides)
@@ -68,12 +70,12 @@ def test_query_by_scenario(db: IndexDB) -> None:
     assert rows[0]["run_id"] == "run-s1"
 
 
-def test_query_by_app_version(db: IndexDB) -> None:
-    """Filter by app_version returns only matching runs."""
-    db.insert(_make_meta(run_id="run-v1", app_version="2.3.0"))
-    db.insert(_make_meta(run_id="run-v2", app_version="2.4.0"))
+def test_query_by_web_version(db: IndexDB) -> None:
+    """Filter by web_version returns only matching runs."""
+    db.insert(_make_meta(run_id="run-v1", web_version="2.3.0"))
+    db.insert(_make_meta(run_id="run-v2", web_version="2.4.0"))
 
-    rows = db.query(app_version="2.3.0")
+    rows = db.query(web_version="2.3.0")
 
     assert len(rows) == 1
     assert rows[0]["run_id"] == "run-v1"

@@ -31,19 +31,7 @@ def test_load_app_config_minimal(tmp_path: Path) -> None:
     app_json.write_text(json.dumps({"name": "my-app", "web_base_url": "http://localhost"}))
     config = load_app_config(tmp_path)
     assert config.name == "my-app"
-    assert config.app_version is None
-
-
-def test_load_app_config_with_version(tmp_path: Path) -> None:
-    """app.json with optional app_version field."""
-    app_json = tmp_path / "app.json"
-    app_json.write_text(json.dumps({
-        "name": "my-app",
-        "web_base_url": "http://localhost",
-        "app_version": "2.3.1",
-    }))
-    config = load_app_config(tmp_path)
-    assert config.app_version == "2.3.1"
+    assert config.viewport_width == 1280
 
 
 def test_load_app_config_no_file(tmp_path: Path) -> None:

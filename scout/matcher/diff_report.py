@@ -40,10 +40,13 @@ def generate_diff_html(
     app = meta.get("app", "")
     baseline = meta.get("baseline_run_id", "")
     target = meta.get("target_run_id", "")
+    baseline_ver = meta.get("baseline_version", "")
+    target_ver = meta.get("target_version", "")
 
     has_detail = any(d.get("baseline_url") for d in diffs)
 
     diff_rows = []
+    popup_data = []  # JSON-serializable data for popup
     for idx, d in enumerate(diffs):
         status_icon = "✓" if d["status_match"] else "✗"
         status_color = "#4ade80" if d["status_match"] else "#ef4444"
@@ -53,63 +56,72 @@ def generate_diff_html(
         val_icon = "✓" if val_match else "✗"
         val_color = "#4ade80" if val_match else "#f59e0b"
         detail = d.get("diff_summary", "") or ""
-        detail_html = detail.replace("\n", "<br>").replace(" ", "&nbsp;") if detail else ""
         val_diff = d.get("value_diff", "") or ""
-        val_diff_html = _esc(val_diff).replace("\n", "<br>").replace(" ", "&nbsp;") if val_diff else ""
+
+        has_diff_content = bool(detail or val_diff)
+        diff_count = val_diff.count("\n") + 1 if val_diff else 0
 
         b_status = d.get("baseline_status", "")
         t_status = d.get("target_status", "")
         row_scenario = d.get("scenario", "")
+
+        # Build popup data for this row
+        popup_entry: dict[str, Any] = {
+            "method": d["method"],
+            "path": d["path"],
+            "scenario": _display_scenario(row_scenario),
+            "diff_summary": detail,
+            "value_diff": val_diff,
+        }
+        if has_detail:
+            popup_entry.update({
+                "baseline_url": d.get("baseline_url") or "",
+                "target_url": d.get("target_url") or "",
+                "baseline_request": d.get("baseline_request") or "",
+                "baseline_response": d.get("baseline_response") or "",
+                "target_request": d.get("target_request") or "",
+                "target_response": d.get("target_response") or "",
+                "baseline_timestamp": d.get("baseline_timestamp") or "",
+                "target_timestamp": d.get("target_timestamp") or "",
+                "baseline_duration": d.get("baseline_duration"),
+                "target_duration": d.get("target_duration"),
+            })
+        popup_data.append(popup_entry)
+
+        # Clickable indicator in Details column
+        if has_diff_content:
+            detail_cell = (
+                f'<td class="detail-trigger" onclick="openPopup({idx})">'
+                f'<span class="diff-badge">{diff_count} diff{"s" if diff_count != 1 else ""}</span></td>'
+            )
+        else:
+            detail_cell = '<td style="color:#555">—</td>'
+
+        # Classify row diff types for badge filtering
+        row_types = []
+        if not d["status_match"]:
+            row_types.append("status")
+        if not d["structure_match"]:
+            row_types.append("structure")
+        if not val_match:
+            row_types.append("value")
+        data_diff_types = " ".join(row_types) if row_types else "clean"
+
         row = (
             f'<tr class="diff-row" data-method="{d["method"]}" data-path="{_esc(d["path"].lower())}"'
-            f' data-scenario="{_esc(_display_scenario(row_scenario).lower())}" data-status="{b_status} {t_status}">'
+            f' data-scenario="{_esc(_display_scenario(row_scenario).lower())}" data-status="{b_status} {t_status}"'
+            f' data-diff-types="{data_diff_types}">'
             f'<td style="color:#666">{idx + 1}</td>'
-            f'<td style="font-size:12px;color:#a5b4fc;">{_display_scenario(row_scenario)}</td>'
+            f'<td class="cell-scenario">{_display_scenario(row_scenario)}</td>'
             f'<td>{d["method"]}</td>'
             f'<td>{d["path"]}</td>'
             f'<td style="color:{status_color}">{status_icon} {d.get("baseline_status", "")}'
             f'{"→" + str(d.get("target_status", "")) if not d["status_match"] else ""}</td>'
             f'<td style="color:{struct_color}">{struct_icon}</td>'
             f'<td style="color:{val_color}">{val_icon}</td>'
-            f'<td style="font-size:11px;font-family:monospace;color:#888">'
+            f'{detail_cell}'
+            f'</tr>'
         )
-        if has_detail:
-            row += f"<span onclick=\"toggle('detail-{idx}')\" style=\"cursor:pointer;color:#888;font-size:16px;\">⋯</span>"
-        row += (
-            f'{detail_html}'
-            f'{"<br>" if detail_html and val_diff_html else ""}{val_diff_html}</td>'
-        )
-        row += '</tr>'
-
-        if has_detail:
-            b_url = _esc(d.get("baseline_url") or "")
-            t_url = _esc(d.get("target_url") or "")
-            b_req = _format_body(d.get("baseline_request"))
-            b_resp = _format_body(d.get("baseline_response"))
-            t_req = _format_body(d.get("target_request"))
-            t_resp = _format_body(d.get("target_response"))
-            b_ts = _esc(d.get("baseline_timestamp") or "")
-            t_ts = _esc(d.get("target_timestamp") or "")
-            b_dur = d.get("baseline_duration")
-            t_dur = d.get("target_duration")
-            b_dur_str = f"{b_dur}ms" if b_dur is not None else ""
-            t_dur_str = f"{t_dur}ms" if t_dur is not None else ""
-            row += (
-                f'<tr id="detail-{idx}" style="display:none">'
-                f'<td colspan="8" style="padding:12px 8px">'
-                f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'
-                f'<div><div class="detail-label">Baseline</div>'
-                f'<div class="detail-meta">{b_ts}{"&nbsp;&nbsp;" + b_dur_str if b_dur_str else ""}</div>'
-                f'<div class="detail-url">{b_url}</div>'
-                f'<div class="detail-label">Request</div><pre class="detail-body">{b_req}</pre>'
-                f'<div class="detail-label">Response</div><pre class="detail-body">{b_resp}</pre></div>'
-                f'<div><div class="detail-label">Target</div>'
-                f'<div class="detail-meta">{t_ts}{"&nbsp;&nbsp;" + t_dur_str if t_dur_str else ""}</div>'
-                f'<div class="detail-url">{t_url}</div>'
-                f'<div class="detail-label">Request</div><pre class="detail-body">{t_req}</pre>'
-                f'<div class="detail-label">Response</div><pre class="detail-body">{t_resp}</pre></div>'
-                f'</div></td></tr>'
-            )
 
         diff_rows.append(row)
 
@@ -133,6 +145,8 @@ def generate_diff_html(
     verdict_color = "#ef4444" if has_issues else "#4ade80"
     verdict = "REGRESSION DETECTED" if has_issues else "NO REGRESSION"
 
+    popup_json = _json.dumps(popup_data, ensure_ascii=False)
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -140,66 +154,170 @@ def generate_diff_html(
 <title>Scout Diff — {app}</title>
 <style>
   body {{ font-family: -apple-system, system-ui, sans-serif; margin: 40px; background: #0a0a0a; color: #e5e5e5; }}
-  h1 {{ font-size: 20px; font-weight: 600; }}
-  h2 {{ font-size: 16px; font-weight: 600; margin-top: 32px; }}
-  .meta {{ display: flex; gap: 24px; margin: 16px 0; font-size: 13px; }}
+  h1 {{ font-size: 22px; font-weight: 600; }}
+  h2 {{ font-size: 17px; font-weight: 600; margin-top: 32px; }}
+  .meta {{ display: flex; gap: 24px; margin: 16px 0; font-size: 14px; }}
   .meta span {{ padding: 4px 12px; border-radius: 6px; background: #1a1a1a; }}
-  .verdict {{ font-size: 14px; font-weight: 700; color: {verdict_color}; margin: 16px 0; }}
-  .summary {{ display: flex; gap: 16px; font-size: 13px; margin-bottom: 16px; }}
+  .verdict {{ font-size: 15px; font-weight: 700; color: {verdict_color}; margin: 16px 0; }}
+  .summary {{ display: flex; gap: 16px; font-size: 14px; margin-bottom: 16px; }}
   .summary span {{ padding: 4px 12px; border-radius: 6px; background: #1a1a1a; }}
+  .summary .badge {{ cursor: pointer; transition: outline 0.15s; }}
+  .summary .badge:hover {{ outline: 1px solid #555; }}
+  .summary .badge.active {{ outline: 2px solid #e5e5e5; }}
   table {{ width: 100%; border-collapse: collapse; margin-top: 8px; }}
-  th {{ text-align: left; font-size: 11px; text-transform: uppercase; color: #888; padding: 8px; border-bottom: 1px solid #333; }}
-  td {{ padding: 8px; border-bottom: 1px solid #1a1a1a; font-size: 13px; }}
-  button {{ background: #333; border: none; color: #e5e5e5; cursor: pointer; padding: 2px 8px; border-radius: 4px; font-size: 11px; }}
-  button:hover {{ background: #555; }}
-  .detail-label {{ font-size: 11px; text-transform: uppercase; color: #888; margin-top: 8px; }}
-  .detail-meta {{ font-size: 11px; color: #888; margin-bottom: 4px; }}
-  .detail-url {{ font-size: 12px; font-family: monospace; color: #a5b4fc; margin-bottom: 4px; word-break: break-all; }}
-  .detail-body {{ font-size: 11px; font-family: monospace; background: #111; padding: 8px; border-radius: 4px; max-height: 300px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 4px 0 8px 0; color: #ccc; }}
+  th {{ text-align: left; font-size: 12px; text-transform: uppercase; color: #888; padding: 10px 8px; border-bottom: 1px solid #333; }}
+  td {{ padding: 10px 8px; border-bottom: 1px solid #1a1a1a; font-size: 14px; }}
+  .cell-scenario {{ font-size: 13px; color: #a5b4fc; }}
+  .detail-trigger {{ cursor: pointer; }}
+  .detail-trigger:hover .diff-badge {{ background: #334155; }}
+  .diff-badge {{ font-size: 12px; color: #f59e0b; background: #1e293b; padding: 2px 8px; border-radius: 4px; }}
+
+  /* Popup overlay */
+  .popup-overlay {{
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    z-index: 1000; justify-content: center; align-items: flex-start; padding: 40px 20px;
+  }}
+  .popup-overlay.open {{ display: flex; }}
+  .popup {{
+    background: #141414; border: 1px solid #333; border-radius: 12px;
+    width: 90vw; max-width: 1200px; max-height: 85vh; overflow-y: auto;
+    padding: 24px 28px; position: relative;
+  }}
+  .popup-close {{
+    position: absolute; top: 12px; right: 16px; background: none; border: none;
+    color: #888; font-size: 22px; cursor: pointer; padding: 4px 8px;
+  }}
+  .popup-close:hover {{ color: #e5e5e5; }}
+  .popup-title {{ font-size: 15px; font-weight: 600; margin-bottom: 4px; color: #e5e5e5; }}
+  .popup-subtitle {{ font-size: 13px; color: #888; margin-bottom: 16px; }}
+  .popup-section {{ font-size: 12px; text-transform: uppercase; color: #888; margin: 16px 0 6px; font-weight: 600; }}
+  .popup-diff {{
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; font-size: 13px; line-height: 1.6;
+    background: #0a0a0a; border: 1px solid #222; border-radius: 8px;
+    padding: 14px 16px; white-space: pre-wrap; word-break: break-all; color: #ccc;
+    max-height: 400px; overflow: auto;
+  }}
+  .popup-diff .line-add {{ color: #4ade80; }}
+  .popup-diff .line-rm {{ color: #ef4444; }}
+  .popup-diff .line-chg {{ color: #f59e0b; }}
+  .popup-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
+  .popup-label {{ font-size: 12px; text-transform: uppercase; color: #666; margin-top: 10px; }}
+  .popup-meta {{ font-size: 12px; color: #888; margin-bottom: 4px; }}
+  .popup-url {{ font-size: 13px; font-family: monospace; color: #a5b4fc; margin-bottom: 4px; word-break: break-all; }}
+  .popup-body {{
+    font-size: 12px; font-family: monospace; background: #0a0a0a; border: 1px solid #222;
+    padding: 10px; border-radius: 6px; max-height: 300px; overflow: auto;
+    white-space: pre-wrap; word-break: break-all; margin: 4px 0 8px 0; color: #ccc;
+  }}
+
+  .detail-label {{ font-size: 12px; text-transform: uppercase; color: #888; margin-top: 8px; }}
+  .detail-meta {{ font-size: 12px; color: #888; margin-bottom: 4px; }}
+  .detail-url {{ font-size: 13px; font-family: monospace; color: #a5b4fc; margin-bottom: 4px; word-break: break-all; }}
+  .detail-body {{ font-size: 12px; font-family: monospace; background: #111; padding: 8px; border-radius: 4px; max-height: 300px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 4px 0 8px 0; color: #ccc; }}
 </style>
 <script>
+var POPUP_DATA = {popup_json};
 document.addEventListener('DOMContentLoaded', function() {{ filterRows(''); }});
-function toggle(id) {{
-  var el = document.getElementById(id);
-  el.style.display = el.style.display === 'none' ? 'table-row' : 'none';
+function esc(s) {{ var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }}
+function formatJson(s) {{
+  if (!s) return '<em>empty</em>';
+  try {{ return esc(JSON.stringify(JSON.parse(s), null, 2)); }}
+  catch(e) {{ return esc(s.slice(0, 2000)); }}
 }}
-function filterRows(q) {{
-  var kw = q.trim();
+function colorDiffLine(line) {{
+  if (line.startsWith('+ ')) return '<span class="line-add">' + esc(line) + '</span>';
+  if (line.startsWith('- ')) return '<span class="line-rm">' + esc(line) + '</span>';
+  if (line.startsWith('≠ ') || line.startsWith('~ ')) return '<span class="line-chg">' + esc(line) + '</span>';
+  return esc(line);
+}}
+function openPopup(idx) {{
+  var d = POPUP_DATA[idx];
+  var el = document.getElementById('popup-overlay');
+  var content = document.getElementById('popup-content');
+  var html = '<div class="popup-title">' + esc(d.method) + ' ' + esc(d.path) + '</div>';
+  html += '<div class="popup-subtitle">' + esc(d.scenario) + '</div>';
+  if (d.diff_summary) {{
+    html += '<div class="popup-section">Structure Diff</div>';
+    html += '<div class="popup-diff">' + d.diff_summary.split('\\n').map(colorDiffLine).join('\\n') + '</div>';
+  }}
+  if (d.value_diff) {{
+    html += '<div class="popup-section">Value Diff</div>';
+    html += '<div class="popup-diff">' + d.value_diff.split('\\n').map(colorDiffLine).join('\\n') + '</div>';
+  }}
+  if (d.baseline_url !== undefined) {{
+    var bDur = d.baseline_duration != null ? d.baseline_duration + 'ms' : '';
+    var tDur = d.target_duration != null ? d.target_duration + 'ms' : '';
+    html += '<div class="popup-section">Request / Response Detail</div>';
+    html += '<div class="popup-grid">';
+    html += '<div><div class="popup-label">Baseline</div>';
+    html += '<div class="popup-meta">' + esc(d.baseline_timestamp) + (bDur ? '&nbsp;&nbsp;' + bDur : '') + '</div>';
+    html += '<div class="popup-url">' + esc(d.baseline_url) + '</div>';
+    html += '<div class="popup-label">Request</div><pre class="popup-body">' + formatJson(d.baseline_request) + '</pre>';
+    html += '<div class="popup-label">Response</div><pre class="popup-body">' + formatJson(d.baseline_response) + '</pre></div>';
+    html += '<div><div class="popup-label">Target</div>';
+    html += '<div class="popup-meta">' + esc(d.target_timestamp) + (tDur ? '&nbsp;&nbsp;' + tDur : '') + '</div>';
+    html += '<div class="popup-url">' + esc(d.target_url) + '</div>';
+    html += '<div class="popup-label">Request</div><pre class="popup-body">' + formatJson(d.target_request) + '</pre>';
+    html += '<div class="popup-label">Response</div><pre class="popup-body">' + formatJson(d.target_response) + '</pre></div>';
+    html += '</div>';
+  }}
+  content.innerHTML = html;
+  el.classList.add('open');
+}}
+function closePopup() {{
+  document.getElementById('popup-overlay').classList.remove('open');
+}}
+document.addEventListener('keydown', function(e) {{ if (e.key === 'Escape') closePopup(); }});
+var _activeType = 'all';
+function filterByType(type) {{
+  _activeType = type;
+  // Update badge active state
+  document.querySelectorAll('.summary .badge').forEach(function(b) {{ b.classList.remove('active'); }});
+  event.target.classList.add('active');
+  applyFilters();
+}}
+function filterRows(q) {{ applyFilters(); }}
+function applyFilters() {{
+  var kw = (document.getElementById('filter-input').value || '').trim();
   var field = document.getElementById('filter-field').value;
   var rows = document.querySelectorAll('.diff-row');
   var total = rows.length, visible = 0;
   rows.forEach(function(row) {{
-    if (!kw) {{ row.style.display = ''; visible++; return; }}
-    var match = false;
-    if (field === 'method' || field === 'all') match = match || row.dataset.method === kw.toUpperCase();
-    if (field === 'path' || field === 'all') match = match || row.dataset.path.indexOf(kw.toLowerCase()) !== -1;
-    if (field === 'scenario' || field === 'all') match = match || row.dataset.scenario.indexOf(kw.toLowerCase()) !== -1;
-    if (field === 'status' || field === 'all') match = match || row.dataset.status.indexOf(kw) !== -1;
-    row.style.display = match ? '' : 'none';
-    if (match) visible++;
-    var detail = row.nextElementSibling;
-    if (detail && detail.id && detail.id.startsWith('detail-')) {{
-      if (!match) detail.style.display = 'none';
+    // Type filter
+    if (_activeType !== 'all') {{
+      var types = row.dataset.diffTypes || '';
+      if (types.indexOf(_activeType) === -1) {{ row.style.display = 'none'; return; }}
     }}
+    // Text filter
+    if (kw) {{
+      var match = false;
+      if (field === 'method' || field === 'all') match = match || row.dataset.method === kw.toUpperCase();
+      if (field === 'path' || field === 'all') match = match || row.dataset.path.indexOf(kw.toLowerCase()) !== -1;
+      if (field === 'scenario' || field === 'all') match = match || row.dataset.scenario.indexOf(kw.toLowerCase()) !== -1;
+      if (field === 'status' || field === 'all') match = match || row.dataset.status.indexOf(kw) !== -1;
+      if (!match) {{ row.style.display = 'none'; return; }}
+    }}
+    row.style.display = '';
+    visible++;
   }});
   var el = document.getElementById('filter-count');
-  el.textContent = kw ? visible + ' / ' + total : total + ' rows';
+  el.textContent = visible + ' / ' + total;
 }}
 </script>
 </head>
 <body>
 <h1>Scout Diff — {app}</h1>
 <div class="meta">
-  <span>Baseline: {baseline}</span>
-  <span>Target: {target}</span>
+  <span>Baseline: {baseline}{' — ' + baseline_ver if baseline_ver else ''}</span>
+  <span>Target: {target}{' — ' + target_ver if target_ver else ''}</span>
 </div>
 <div class="verdict">{verdict}</div>
 <div class="summary">
-  <span>{summary['total_paired']} paired</span>
-  <span style="color:#ef4444">{summary['status_mismatches']} status changes</span>
-  <span style="color:#ef4444">{summary['structure_mismatches']} structure changes</span>
-  <span style="color:#f59e0b">{value_changes} value changes</span>
-  <span style="color:#facc15">{summary['missing_endpoints']} endpoint changes</span>
+  <span class="badge active" onclick="filterByType('all')">All ({summary['total_paired']})</span>
+  <span class="badge" style="color:#ef4444" onclick="filterByType('status')">{summary['status_mismatches']} status</span>
+  <span class="badge" style="color:#ef4444" onclick="filterByType('structure')">{summary['structure_mismatches']} structure</span>
+  <span class="badge" style="color:#f59e0b" onclick="filterByType('value')">{value_changes} value</span>
+  <span class="badge" style="color:#facc15" onclick="filterByType('endpoint')">{summary['missing_endpoints']} endpoint</span>
 </div>
 <div class="summary">
   <span>Baseline: {summary.get('baseline_4xx', 0)} 4xx, {summary.get('baseline_5xx', 0)} 5xx</span>
@@ -228,6 +346,13 @@ function filterRows(q) {{
 </table>
 
 {"<h2>Endpoint Changes</h2>" + chr(10) + '<table>' + chr(10) + '<thead><tr><th>#</th><th>Scenario</th><th>Change</th><th>Method</th><th>Path</th><th>Status</th></tr></thead>' + chr(10) + '<tbody>' + chr(10) + "".join(missing_rows) + chr(10) + '</tbody>' + chr(10) + '</table>' if missing_rows else ""}
+
+<div id="popup-overlay" class="popup-overlay" onclick="if(event.target===this)closePopup()">
+  <div class="popup">
+    <button class="popup-close" onclick="closePopup()">✕</button>
+    <div id="popup-content"></div>
+  </div>
+</div>
 
 </body>
 </html>"""

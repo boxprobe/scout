@@ -6,7 +6,7 @@ from scout.run_metadata import build_metadata
 
 
 def _full_config() -> AppConfig:
-    return AppConfig(name="medusa-admin", web_base_url="http://localhost", app_version="2.3.1")
+    return AppConfig(name="medusa-admin", web_base_url="http://localhost")
 
 
 def _full_git() -> GitInfo:
@@ -18,14 +18,20 @@ def test_build_metadata_full_context() -> None:
     config = _full_config()
     git = _full_git()
 
-    meta = build_metadata(config=config, git=git, scenario="tests/login.py", env="staging")
+    meta = build_metadata(
+        config=config, git=git, scenario="tests/login.py", env="staging",
+        web_version="2.3.1", api_version="2.3.1",
+        web_commit="abc123", api_commit="def456",
+    )
 
     assert meta.scenario == "tests/login.py"
     assert meta.app == "medusa-admin"
-    assert meta.app_version == "2.3.1"
+    assert meta.web_version == "2.3.1"
+    assert meta.api_version == "2.3.1"
+    assert meta.web_commit == "abc123"
+    assert meta.api_commit == "def456"
     assert meta.env == "staging"
-    assert meta.commit == git.commit
-    assert meta.branch == "main"
+    assert meta.scenario_commit is not None
     assert meta.run_id  # non-empty
     assert meta.timestamp  # non-empty
     assert isinstance(meta.scout_version, str)
@@ -38,23 +44,42 @@ def test_build_metadata_no_git() -> None:
 
     meta = build_metadata(config=config, git=git, scenario="smoke/basic.py")
 
-    assert meta.commit is None
-    assert meta.branch is None
+    assert meta.web_commit is None
+    assert meta.api_commit is None
+    assert meta.scenario_commit is None
     assert meta.app == "medusa-admin"
     assert meta.scenario == "smoke/basic.py"
 
 
-def test_build_metadata_no_app_version() -> None:
-    """app_version is None when AppConfig has no app_version."""
+def test_build_metadata_no_version() -> None:
+    """web_version and api_version are None when not specified."""
     config = AppConfig(name="medusa-admin", web_base_url="http://localhost")
     git = _full_git()
 
     meta = build_metadata(config=config, git=git, scenario="regression/api.py")
 
     assert meta.app == "medusa-admin"
-    assert meta.app_version is None
-    assert meta.commit == git.commit
-    assert meta.branch == git.branch
+    assert meta.web_version is None
+    assert meta.api_version is None
+    assert meta.web_commit is None
+    assert meta.api_commit is None
+    assert meta.scenario_commit == git.commit
+
+
+def test_api_defaults_to_web() -> None:
+    """api_version and api_commit fall back to web_* when not specified."""
+    config = _full_config()
+    git = _full_git()
+
+    meta = build_metadata(
+        config=config, git=git, scenario="s.py",
+        web_version="2.14.0", web_commit="abc123",
+    )
+
+    assert meta.web_version == "2.14.0"
+    assert meta.api_version == "2.14.0"
+    assert meta.web_commit == "abc123"
+    assert meta.api_commit == "abc123"
 
 
 def test_run_id_is_unique() -> None:

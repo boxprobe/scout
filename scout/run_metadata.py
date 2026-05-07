@@ -17,10 +17,12 @@ class RunMetadata:
     timestamp: str
     scenario: str
     app: str | None = None
-    app_version: str | None = None
+    web_version: str | None = None
+    api_version: str | None = None
     env: str | None = None
-    commit: str | None = None
-    branch: str | None = None
+    web_commit: str | None = None
+    api_commit: str | None = None
+    scenario_commit: str | None = None
     scout_version: str = ""
 
 
@@ -30,6 +32,10 @@ def build_metadata(
     git: GitInfo,
     scenario: str,
     env: str | None = None,
+    web_version: str | None = None,
+    api_version: str | None = None,
+    web_commit: str | None = None,
+    api_commit: str | None = None,
 ) -> RunMetadata:
     """Assemble a RunMetadata from config, git context, and runtime args.
 
@@ -46,9 +52,11 @@ def build_metadata(
         timestamp=datetime.now(tz=UTC).isoformat(),
         scenario=scenario,
         app=config.name,
-        app_version=config.app_version,
+        web_version=web_version,
+        api_version=api_version or web_version,
         env=env,
-        commit=git.commit,
-        branch=git.branch,
+        web_commit=web_commit,
+        api_commit=api_commit or web_commit,
+        scenario_commit=git.commit,
         scout_version=scout_version,
     )

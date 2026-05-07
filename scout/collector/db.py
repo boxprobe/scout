@@ -13,10 +13,12 @@ CREATE TABLE IF NOT EXISTS scenarios (
     run_id         TEXT NOT NULL,
     scenario       TEXT NOT NULL,
     app            TEXT,
-    app_version    TEXT,
+    web_version    TEXT,
+    api_version    TEXT,
     env            TEXT,
-    commit_hash    TEXT,
-    branch         TEXT,
+    web_commit     TEXT,
+    api_commit     TEXT,
+    scenario_commit TEXT,
     scout_version  TEXT,
     started_at     TEXT NOT NULL,
     stopped_at     TEXT,
@@ -54,19 +56,21 @@ class RecordingDB:
         scenario: str,
         *,
         app: str | None = None,
-        app_version: str | None = None,
+        web_version: str | None = None,
+        api_version: str | None = None,
         env: str | None = None,
-        commit_hash: str | None = None,
-        branch: str | None = None,
+        web_commit: str | None = None,
+        api_commit: str | None = None,
+        scenario_commit: str | None = None,
         scout_version: str | None = None,
     ) -> int:
         cursor = self._conn.execute(
             """INSERT INTO scenarios
-               (run_id, scenario, app, app_version, env, commit_hash, branch,
-                scout_version, started_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (run_id, scenario, app, app_version, env, commit_hash, branch,
-             scout_version, datetime.now(UTC).isoformat()),
+               (run_id, scenario, app, web_version, api_version, env, web_commit, api_commit,
+                scenario_commit, scout_version, started_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (run_id, scenario, app, web_version, api_version, env, web_commit, api_commit,
+             scenario_commit, scout_version, datetime.now(UTC).isoformat()),
         )
         self._conn.commit()
         return cursor.lastrowid

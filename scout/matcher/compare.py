@@ -6,6 +6,13 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from scout.matcher.noise import (
+    DiffIgnoreConfig,
+    IgnoreRule,
+    filter_body,
+    should_ignore_value_diff,
+)
+
 
 @dataclass
 class EndpointDiff:
@@ -95,8 +102,16 @@ def _flatten_values(obj: Any, path: str = "$") -> dict[str, Any]:
     return result
 
 
-def _diff_values(base_obj: Any, target_obj: Any) -> str:
-    """Compare leaf values between two JSON objects. Return diff lines."""
+def _diff_values(
+    base_obj: Any,
+    target_obj: Any,
+    value_types: tuple[str, ...] = (),
+) -> str:
+    """Compare leaf values between two JSON objects. Return diff lines.
+
+    If value_types is provided, value pairs where both sides match the same
+    noise type are silently skipped.
+    """
     b_vals = _flatten_values(base_obj)
     t_vals = _flatten_values(target_obj)
 
@@ -105,6 +120,8 @@ def _diff_values(base_obj: Any, target_obj: Any) -> str:
     for key in all_keys:
         if key in b_vals and key in t_vals:
             if b_vals[key] != t_vals[key]:
+                if should_ignore_value_diff(b_vals[key], t_vals[key], value_types):
+                    continue
                 lines.append(f"≠ {key}: {_val_repr(b_vals[key])} → {_val_repr(t_vals[key])}")
         elif key in t_vals:
             lines.append(f"+ {key}: {_val_repr(t_vals[key])}")
@@ -125,14 +142,29 @@ def _val_repr(v: Any) -> str:
     return str(v)
 
 
-def compare_pair(baseline: dict, target: dict) -> EndpointDiff:
-    """Compare a baseline and target API record."""
+def compare_pair(
+    baseline: dict,
+    target: dict,
+    ignore: IgnoreRule | None = None,
+) -> EndpointDiff:
+    """Compare a baseline and target API record.
+
+    If *ignore* is provided, matching fields are stripped from both bodies
+    before comparison, and value-type noise is suppressed in diff output.
+    """
     b_status = baseline.get("status_code")
     t_status = target.get("status_code")
     status_match = b_status == t_status
 
     b_body = _parse_body(baseline.get("response_body"))
     t_body = _parse_body(target.get("response_body"))
+
+    # Apply field-level filtering to parsed JSON bodies
+    if ignore and ignore.fields:
+        if isinstance(b_body, (dict, list)):
+            b_body = filter_body(b_body, ignore)
+        if isinstance(t_body, (dict, list)):
+            t_body = filter_body(t_body, ignore)
 
     # Both None
     if b_body is None and t_body is None:
@@ -179,8 +211,9 @@ def compare_pair(baseline: dict, target: dict) -> EndpointDiff:
     structure_match = (b_schema == t_schema)
     diff_summary = "" if structure_match else _diff_schemas(b_schema, t_schema)
 
-    # Compare values
-    value_diff = _diff_values(b_body, t_body)
+    # Compare values (with value-type noise suppression)
+    vt = ignore.value_types if ignore else ()
+    value_diff = _diff_values(b_body, t_body, value_types=vt)
     value_match = not bool(value_diff)
 
     return EndpointDiff(

@@ -61,6 +61,10 @@ def main() -> None:
 @click.option("--out", "out_dir", default=None, type=click.Path(), help="Output directory.")
 @click.option("--web-base-url", default=None, help="Override web_base_url from app.json.")
 @click.option("--api-base-url", default=None, help="Override api_base_url from app.json.")
+@click.option("--web-version", default=None, help="Web app version label (e.g. 2.14.0).")
+@click.option("--api-version", default=None, help="API version label (defaults to --web-version).")
+@click.option("--web-commit", default=None, help="Web app commit hash.")
+@click.option("--api-commit", default=None, help="API commit hash (defaults to --web-commit).")
 @click.option("--concurrency", default=10, type=click.IntRange(1, 50),
               help="Max parallel scenarios (default: 10, max: 50).")
 def run(
@@ -70,6 +74,10 @@ def run(
     out_dir: str | None,
     web_base_url: str | None,
     api_base_url: str | None,
+    web_version: str | None,
+    api_version: str | None,
+    web_commit: str | None,
+    api_commit: str | None,
     concurrency: int,
 ) -> None:
     """Run test scenarios with API recording."""
@@ -112,10 +120,12 @@ def run(
                     "db_path": record_db,
                     "api_base_url": config.api_base_url,
                     "app": config.name,
-                    "app_version": config.app_version,
+                    "web_version": web_version,
+                    "api_version": api_version or web_version,
                     "env": env_name,
-                    "commit_hash": git.commit,
-                    "branch": git.branch,
+                    "web_commit": web_commit,
+                    "api_commit": api_commit or web_commit,
+                    "scenario_commit": git.commit,
                     "scout_version": _scout_version(),
                 },
             )
@@ -160,17 +170,23 @@ def run(
 
     index = IndexDB(repo_root / ".scout" / "index.db")
     for scenario_path, result in results.items():
-        meta = build_metadata(config=config, git=git, scenario=scenario_path, env=env_name)
+        meta = build_metadata(
+            config=config, git=git, scenario=scenario_path, env=env_name,
+            web_version=web_version, api_version=api_version,
+            web_commit=web_commit, api_commit=api_commit,
+        )
         # Override run_id to use our batch run_id
         meta = RunMetadata(
             run_id=run_id,
             timestamp=meta.timestamp,
             scenario=scenario_path,
             app=meta.app,
-            app_version=meta.app_version,
+            web_version=meta.web_version,
+            api_version=meta.api_version,
             env=meta.env,
-            commit=meta.commit,
-            branch=meta.branch,
+            web_commit=meta.web_commit,
+            api_commit=meta.api_commit,
+            scenario_commit=meta.scenario_commit,
             scout_version=meta.scout_version,
         )
         index.insert(meta)
@@ -273,12 +289,14 @@ def verify(
 @main.command()
 @click.option("--app", default=None, help="Filter by app name.")
 @click.option("--scenario", default=None, help="Filter by scenario path.")
-@click.option("--app-version", "app_version", default=None, help="Filter by app version.")
+@click.option("--web-version", default=None, help="Filter by web version.")
+@click.option("--api-version", default=None, help="Filter by API version.")
 @click.option("--env", "env_name", default=None, help="Filter by environment name.")
 def runs(
     app: str | None,
     scenario: str | None,
-    app_version: str | None,
+    web_version: str | None,
+    api_version: str | None,
     env_name: str | None,
 ) -> None:
     """List recorded test runs."""
@@ -290,7 +308,8 @@ def runs(
         return
 
     db = IndexDB(index_path)
-    rows = db.query(app=app, scenario=scenario, app_version=app_version, env=env_name)
+    rows = db.query(app=app, scenario=scenario, web_version=web_version,
+                    api_version=api_version, env=env_name)
     db.close()
 
     if not rows:
@@ -333,6 +352,7 @@ def analyze() -> None:
 def diff(baseline: str, target: str, detail: bool) -> None:
     """Compare API recordings between two runs."""
     from scout.collector.db import RecordingDB
+    from scout.config import load_app_config
     from scout.matcher.align import align_records
     from scout.matcher.compare import compare_pair
     from scout.matcher.diff_db import DiffDB
@@ -340,6 +360,14 @@ def diff(baseline: str, target: str, detail: bool) -> None:
 
     repo_root = Path.cwd()
     scout_dir = repo_root / ".scout"
+
+    # Load diff_ignore config from app.json (optional — graceful if missing)
+    try:
+        app_config = load_app_config(repo_root)
+        diff_ignore_cfg = app_config.diff_ignore
+    except (FileNotFoundError, KeyError):
+        from scout.matcher.noise import DiffIgnoreConfig
+        diff_ignore_cfg = DiffIgnoreConfig()
 
     # Find record.db files
     base_db_path = scout_dir / "runs" / baseline / "record.db"
@@ -363,8 +391,12 @@ def diff(baseline: str, target: str, detail: bool) -> None:
         click.echo("Error: no recording sessions found in one or both runs.", err=True)
         raise SystemExit(1)
 
-    # Determine app name from first session
-    app_name = next(iter(base_sessions.values())).get("app", "")
+    # Determine app name and versions from first session
+    base_first = next(iter(base_sessions.values()))
+    target_first = next(iter(target_sessions.values()))
+    app_name = base_first.get("app", "")
+    baseline_ver = base_first.get("web_version") or base_first.get("app_version") or ""
+    target_ver = target_first.get("web_version") or target_first.get("app_version") or ""
 
     # Compare + write results
     diff_dir = scout_dir / "diffs" / f"{baseline}_vs_{target}"
@@ -373,6 +405,8 @@ def diff(baseline: str, target: str, detail: bool) -> None:
         baseline_run_id=baseline,
         target_run_id=target,
         app=app_name,
+        baseline_version=baseline_ver,
+        target_version=target_ver,
     )
 
     def _detail_kwargs(rec: dict, prefix: str) -> dict:
@@ -400,7 +434,8 @@ def diff(baseline: str, target: str, detail: bool) -> None:
 
             for pair in aligned:
                 if pair.baseline is not None and pair.target is not None:
-                    result = compare_pair(pair.baseline, pair.target)
+                    ignore_rule = diff_ignore_cfg.rule_for(pair.method, pair.path)
+                    result = compare_pair(pair.baseline, pair.target, ignore=ignore_rule)
                     ddb.insert_endpoint_diff(
                         scenario=scenario_name,
                         baseline_record_id=pair.baseline.get("id"),

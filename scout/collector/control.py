@@ -77,10 +77,12 @@ class ControlServer:
             run_id,
             scenario,
             app=body.get("app"),
-            app_version=body.get("app_version"),
+            web_version=body.get("web_version"),
+            api_version=body.get("api_version"),
             env=body.get("env"),
-            commit_hash=body.get("commit_hash"),
-            branch=body.get("branch"),
+            web_commit=body.get("web_commit"),
+            api_commit=body.get("api_commit"),
+            scenario_commit=body.get("scenario_commit"),
             scout_version=body.get("scout_version"),
         )
         self._sessions[scenario] = sid
