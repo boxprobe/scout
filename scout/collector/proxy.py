@@ -20,18 +20,29 @@ class RecordingAddon:
 
     def __init__(self, control: ControlServer) -> None:
         self._control = control
-        self._pending: dict[str, tuple[float, str | None]] = {}  # flow_id → (start_time, scenario)
+        self._pending: dict[str, tuple[float, str | None, int | None]] = {}  # flow_id → (start_time, scenario, step_seq)
 
     def request(self, flow: http.HTTPFlow) -> None:
         # Extract and strip session header before forwarding
-        scenario = flow.request.headers.pop(_SESSION_HEADER, None)
-        self._pending[flow.id] = (time.monotonic(), scenario)
+        # Format: "scenario_path" or "scenario_path:step_seq"
+        raw = flow.request.headers.pop(_SESSION_HEADER, None)
+        scenario: str | None = None
+        step_seq: int | None = None
+        if raw:
+            parts = raw.rsplit(":", 1)
+            scenario = parts[0]
+            if len(parts) == 2:
+                try:
+                    step_seq = int(parts[1])
+                except ValueError:
+                    pass
+        self._pending[flow.id] = (time.monotonic(), scenario, step_seq)
 
     def response(self, flow: http.HTTPFlow) -> None:
         entry = self._pending.pop(flow.id, None)
         if entry is None:
             return
-        start_time, scenario = entry
+        start_time, scenario, step_seq = entry
 
         session_id = self._control.session_id_for(scenario) if scenario else None
         if session_id is None:
@@ -55,6 +66,7 @@ class RecordingAddon:
 
         db.insert_api_record(
             scenario_id=session_id,
+            step_seq=step_seq,
             method=req.method,
             url=req.pretty_url,
             request_headers=json.dumps(dict(req.headers)),

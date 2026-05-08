@@ -14,7 +14,6 @@ class AppConfig:
     api_base_url: str | None = None
     viewport_width: int = 1280
     viewport_height: int = 900
-    diff_ignore: DiffIgnoreConfig = DiffIgnoreConfig()
 
 
 def load_app_config(repo_root: Path) -> AppConfig:
@@ -34,8 +33,16 @@ def load_app_config(repo_root: Path) -> AppConfig:
         api_base_url=data.get("api_base_url"),
         viewport_width=data.get("viewport_width", 1280),
         viewport_height=data.get("viewport_height", 900),
-        diff_ignore=load_diff_ignore(data.get("diff_ignore")),
     )
+
+
+def load_diff_ignore_config(repo_root: Path) -> DiffIgnoreConfig:
+    """Load diff_ignore.json from repo root. Returns empty config if missing."""
+    path = repo_root / "diff_ignore.json"
+    if not path.exists():
+        return DiffIgnoreConfig()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return load_diff_ignore(data)
 
 
 def override_urls(config: AppConfig, base_url: str | None, api_url: str | None) -> AppConfig:
@@ -48,5 +55,4 @@ def override_urls(config: AppConfig, base_url: str | None, api_url: str | None) 
         api_base_url=api_url or config.api_base_url,
         viewport_width=config.viewport_width,
         viewport_height=config.viewport_height,
-        diff_ignore=config.diff_ignore,
     )

@@ -66,6 +66,7 @@ async def _run_scenario_with_browser(
     *,
     screenshot_dir: Path | None = None,
     extra_http_headers: dict[str, str] | None = None,
+    session_id: str | None = None,
 ) -> ExecutionResult:
     """Execute a scenario using an existing browser instance."""
     scenario._validate()
@@ -82,6 +83,7 @@ async def _run_scenario_with_browser(
         base_url=scenario.base_url,
         wait_ms=scenario.wait_ms,
         screenshot_dir=screenshot_dir,
+        session_id=session_id,
     )
 
     t0 = time.monotonic()
@@ -242,6 +244,7 @@ async def execute_batch(
             result = await _run_scenario_with_browser(
                 loaded, browser, screenshot_dir=ss_dir,
                 extra_http_headers=extra_headers,
+                session_id=scenario_path if proxy else None,
             )
             results[scenario_path] = result
             if on_after_scenario:

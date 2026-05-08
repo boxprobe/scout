@@ -28,6 +28,7 @@ class Page:
         wait_ms: int = 0,
         locator_registry: dict[str, Locator] | None = None,
         screenshot_dir: Path | None = None,
+        session_id: str | None = None,
     ) -> None:
         self._page = pw_page
         self._base_url = base_url.rstrip("/")
@@ -35,6 +36,7 @@ class Page:
         self._registry: dict[str, Locator] = locator_registry or {}
         self._screenshot_dir = screenshot_dir
         self._step_counter = 0
+        self._session_id = session_id
 
     async def _scroll_and_resolve(self, locator: Locator) -> tuple[int, int]:
         """Scroll to locator's annotation-time position, then resolve coordinates."""
@@ -85,6 +87,17 @@ class Page:
         await self._page.evaluate(
             "document.getElementById('__scout-marker')?.remove()"
         )
+
+    async def set_step(self, seq: int) -> None:
+        """Update the X-Scout-Session header to include step sequence number.
+
+        This tags all subsequent HTTP requests with the current step,
+        so the recording proxy can associate API calls with specific steps.
+        """
+        if self._session_id:
+            await self._page.set_extra_http_headers({
+                "X-Scout-Session": f"{self._session_id}:{seq}",
+            })
 
     async def goto(self, url: str) -> None:
         """Navigate to a URL. Relative paths are prepended with base_url."""

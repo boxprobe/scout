@@ -111,23 +111,34 @@ def run(
     record_db = str(runs_dir / "record.db")
 
     async def on_before(scenario_path: str) -> None:
+        # Load step metadata from steps.json if available
+        steps_data: list[dict] | None = None
+        scenario_dir = repo_root / "scenarios" / scenario_path
+        steps_file = scenario_dir / "steps.json"
+        if steps_file.exists():
+            import json
+            steps_data = json.loads(steps_file.read_text(encoding="utf-8"))
+
         async with httpx.AsyncClient() as client:
+            payload: dict = {
+                "scenario": scenario_path,
+                "run_id": run_id,
+                "db_path": record_db,
+                "api_base_url": config.api_base_url,
+                "app": config.name,
+                "web_version": web_version,
+                "api_version": api_version or web_version,
+                "env": env_name,
+                "web_commit": web_commit,
+                "api_commit": api_commit or web_commit,
+                "scenario_commit": git.commit,
+                "scout_version": _scout_version(),
+            }
+            if steps_data:
+                payload["steps"] = steps_data
             await client.post(
                 f"{control_base}/session/start",
-                json={
-                    "scenario": scenario_path,
-                    "run_id": run_id,
-                    "db_path": record_db,
-                    "api_base_url": config.api_base_url,
-                    "app": config.name,
-                    "web_version": web_version,
-                    "api_version": api_version or web_version,
-                    "env": env_name,
-                    "web_commit": web_commit,
-                    "api_commit": api_commit or web_commit,
-                    "scenario_commit": git.commit,
-                    "scout_version": _scout_version(),
-                },
+                json=payload,
             )
 
     async def on_after(scenario_path: str, result) -> None:
@@ -349,7 +360,9 @@ def analyze() -> None:
 @click.argument("baseline", required=True)
 @click.argument("target", required=True)
 @click.option("--detail/--no-detail", default=False, help="Include raw request/response data in diff.")
-def diff(baseline: str, target: str, detail: bool) -> None:
+@click.option("--serve/--no-serve", default=False, help="Start local server for interactive report editing.")
+@click.option("--port", default=8675, type=int, help="Server port (default: 8675).")
+def diff(baseline: str, target: str, detail: bool, serve: bool, port: int) -> None:
     """Compare API recordings between two runs."""
     from scout.collector.db import RecordingDB
     from scout.config import load_app_config
@@ -361,13 +374,9 @@ def diff(baseline: str, target: str, detail: bool) -> None:
     repo_root = Path.cwd()
     scout_dir = repo_root / ".scout"
 
-    # Load diff_ignore config from app.json (optional — graceful if missing)
-    try:
-        app_config = load_app_config(repo_root)
-        diff_ignore_cfg = app_config.diff_ignore
-    except (FileNotFoundError, KeyError):
-        from scout.matcher.noise import DiffIgnoreConfig
-        diff_ignore_cfg = DiffIgnoreConfig()
+    # Load diff_ignore from diff_ignore.json (separate from app.json)
+    from scout.config import load_diff_ignore_config
+    diff_ignore_cfg = load_diff_ignore_config(repo_root)
 
     # Find record.db files
     base_db_path = scout_dir / "runs" / baseline / "record.db"
@@ -421,6 +430,30 @@ def diff(baseline: str, target: str, detail: bool) -> None:
             f"{prefix}_duration": rec.get("duration_ms"),
         }
 
+    def _build_step_labels(rdb: RecordingDB, session_id: int) -> dict[int, str]:
+        """Build seq → label mapping from steps table."""
+        labels: dict[int, str] = {}
+        for s in rdb.get_steps(session_id):
+            action = s.get("action", "")
+            name = s.get("element_name") or s.get("page_url") or ""
+            labels[s["seq"]] = f"{action} {name}".strip()
+        return labels
+
+    def _build_offset_map(rdb: RecordingDB, session_id: int) -> dict[int, int]:
+        """Build record_id → offset_ms from scenario's first record."""
+        from datetime import datetime as _dt, timezone as _tz
+        records = rdb.get_api_records(session_id)
+        if not records:
+            return {}
+        # Parse all timestamps, find earliest
+        def _parse(ts: str) -> _dt:
+            return _dt.fromisoformat(ts)
+        t0 = _parse(records[0]["timestamp"])
+        return {
+            r["id"]: int((_parse(r["timestamp"]) - t0).total_seconds() * 1000)
+            for r in records
+        }
+
     # Process each scenario present in either run
     all_scenarios = sorted(set(base_sessions) | set(target_sessions))
     for scenario_name in all_scenarios:
@@ -430,18 +463,63 @@ def diff(baseline: str, target: str, detail: bool) -> None:
         if base_s and target_s:
             base_records = base_rdb.get_api_records(base_s["id"])
             target_records = target_rdb.get_api_records(target_s["id"])
+            # Build step labels from baseline (both runs share the same steps)
+            step_labels = _build_step_labels(base_rdb, base_s["id"])
+            if not step_labels:
+                step_labels = _build_step_labels(target_rdb, target_s["id"])
+            base_offsets = _build_offset_map(base_rdb, base_s["id"])
+            target_offsets = _build_offset_map(target_rdb, target_s["id"])
             aligned = align_records(base_records, target_records)
 
             for pair in aligned:
                 if pair.baseline is not None and pair.target is not None:
+                    # Use baseline step_seq (or target if baseline is None)
+                    step_seq = pair.baseline.get("step_seq") or pair.target.get("step_seq")
+                    step_label = step_labels.get(step_seq) if step_seq else None
+
+                    # status_only: skip structure/value diff for matching rules
+                    if diff_ignore_cfg.is_status_only(scenario_name, pair.path, step_seq):
+                        b_status = pair.baseline.get("status_code")
+                        t_status = pair.target.get("status_code")
+                        result_status_match = b_status == t_status
+                        b_id = pair.baseline.get("id")
+                        t_id = pair.target.get("id")
+                        ddb.insert_endpoint_diff(
+                            scenario=scenario_name,
+                            baseline_record_id=b_id,
+                            target_record_id=t_id,
+                            method=pair.method,
+                            path=pair.path,
+                            step_seq=step_seq,
+                            step_label=step_label,
+                            baseline_offset_ms=base_offsets.get(b_id) if b_id else None,
+                            target_offset_ms=target_offsets.get(t_id) if t_id else None,
+                            status_match=result_status_match,
+                            baseline_status=b_status,
+                            target_status=t_status,
+                            structure_match=True,
+                            diff_summary="",
+                            value_match=True,
+                            value_diff="",
+                            **_detail_kwargs(pair.baseline, "baseline"),
+                            **_detail_kwargs(pair.target, "target"),
+                        )
+                        continue
+
                     ignore_rule = diff_ignore_cfg.rule_for(pair.method, pair.path)
                     result = compare_pair(pair.baseline, pair.target, ignore=ignore_rule)
+                    b_id = pair.baseline.get("id")
+                    t_id = pair.target.get("id")
                     ddb.insert_endpoint_diff(
                         scenario=scenario_name,
-                        baseline_record_id=pair.baseline.get("id"),
-                        target_record_id=pair.target.get("id"),
+                        baseline_record_id=b_id,
+                        target_record_id=t_id,
                         method=pair.method,
                         path=pair.path,
+                        step_seq=step_seq,
+                        step_label=step_label,
+                        baseline_offset_ms=base_offsets.get(b_id) if b_id else None,
+                        target_offset_ms=target_offsets.get(t_id) if t_id else None,
                         status_match=result.status_match,
                         baseline_status=result.baseline_status,
                         target_status=result.target_status,
@@ -505,7 +583,12 @@ def diff(baseline: str, target: str, detail: bool) -> None:
     summary = ddb.summary()
     ddb.close()
 
-    generate_diff_html(meta, diffs, missing, summary, diff_dir / "report.html")
+    # Read raw diff_ignore.json for embedding in report
+    import json as _json
+    di_path = repo_root / "diff_ignore.json"
+    di_raw = _json.loads(di_path.read_text(encoding="utf-8")) if di_path.exists() else {}
+    generate_diff_html(meta, diffs, missing, summary, diff_dir / "report.html",
+                       diff_ignore=di_raw)
 
     # Print summary
     has_issues = summary["status_mismatches"] + summary["structure_mismatches"] + summary["missing_endpoints"]
@@ -524,5 +607,8 @@ def diff(baseline: str, target: str, detail: bool) -> None:
     click.echo(f"Report: {diff_dir / 'report.html'}")
     click.echo(f"Data:   {diff_dir / 'diff.db'}")
 
-    if has_issues:
+    if serve:
+        from scout.matcher.diff_server import serve_report
+        serve_report(diff_dir, repo_root, port)
+    elif has_issues:
         raise SystemExit(1)

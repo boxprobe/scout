@@ -86,6 +86,12 @@ class ControlServer:
             scout_version=body.get("scout_version"),
         )
         self._sessions[scenario] = sid
+
+        # Store step metadata if provided
+        steps = body.get("steps")
+        if steps:
+            self._db.insert_steps(sid, steps)
+
         return web.json_response({"scenario_id": sid})
 
     async def _handle_stop(self, request: web.Request) -> web.Response:

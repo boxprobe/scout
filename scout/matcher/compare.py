@@ -10,6 +10,7 @@ from scout.matcher.noise import (
     DiffIgnoreConfig,
     IgnoreRule,
     filter_body,
+    filter_diff_lines,
     should_ignore_value_diff,
 )
 
@@ -211,9 +212,19 @@ def compare_pair(
     structure_match = (b_schema == t_schema)
     diff_summary = "" if structure_match else _diff_schemas(b_schema, t_schema)
 
+    # Post-filter structure diff by path expressions too
+    if ignore and ignore.paths and diff_summary:
+        diff_summary = filter_diff_lines(diff_summary, ignore.paths)
+        structure_match = not bool(diff_summary.strip())
+
     # Compare values (with value-type noise suppression)
     vt = ignore.value_types if ignore else ()
     value_diff = _diff_values(b_body, t_body, value_types=vt)
+
+    # Post-filter: remove diff lines matching path expressions
+    if ignore and ignore.paths and value_diff:
+        value_diff = filter_diff_lines(value_diff, ignore.paths)
+
     value_match = not bool(value_diff)
 
     return EndpointDiff(

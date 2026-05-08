@@ -25,9 +25,21 @@ CREATE TABLE IF NOT EXISTS scenarios (
     UNIQUE(run_id, scenario)
 );
 
+CREATE TABLE IF NOT EXISTS steps (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    scenario_id  INTEGER NOT NULL REFERENCES scenarios(id),
+    seq          INTEGER NOT NULL,
+    action       TEXT NOT NULL,
+    element_name TEXT,
+    page_url     TEXT,
+    input_value  TEXT,
+    UNIQUE(scenario_id, seq)
+);
+
 CREATE TABLE IF NOT EXISTS api_records (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     scenario_id      INTEGER NOT NULL REFERENCES scenarios(id),
+    step_seq         INTEGER,
     timestamp        TEXT NOT NULL,
     method           TEXT NOT NULL,
     url              TEXT NOT NULL,
@@ -75,6 +87,26 @@ class RecordingDB:
         self._conn.commit()
         return cursor.lastrowid
 
+    def insert_steps(self, scenario_id: int, steps: list[dict[str, Any]]) -> None:
+        """Bulk-insert step metadata for a scenario session."""
+        for s in steps:
+            self._conn.execute(
+                """INSERT OR IGNORE INTO steps
+                   (scenario_id, seq, action, element_name, page_url, input_value)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (scenario_id, s["seq"], s["action"], s.get("element_name"),
+                 s.get("page_url"), s.get("input_value")),
+            )
+        self._conn.commit()
+
+    def get_steps(self, scenario_id: int) -> list[dict[str, Any]]:
+        """Return all steps for a scenario session."""
+        rows = self._conn.execute(
+            "SELECT * FROM steps WHERE scenario_id = ? ORDER BY seq",
+            (scenario_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def stop_session(self, scenario_id: int) -> None:
         self._conn.execute(
             "UPDATE scenarios SET stopped_at = ? WHERE id = ?",
@@ -98,6 +130,7 @@ class RecordingDB:
         scenario_id: int,
         method: str,
         url: str,
+        step_seq: int | None = None,
         status_code: int | None = None,
         request_headers: str | None = None,
         request_body: str | None = None,
@@ -107,10 +140,10 @@ class RecordingDB:
     ) -> None:
         self._conn.execute(
             """INSERT INTO api_records
-               (scenario_id, timestamp, method, url, request_headers, request_body,
+               (scenario_id, step_seq, timestamp, method, url, request_headers, request_body,
                 status_code, response_headers, response_body, duration_ms)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (scenario_id, datetime.now(UTC).isoformat(), method, url,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (scenario_id, step_seq, datetime.now(UTC).isoformat(), method, url,
              request_headers, request_body, status_code, response_headers,
              response_body, duration_ms),
         )

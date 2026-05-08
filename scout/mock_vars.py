@@ -65,7 +65,7 @@ class _NumberVar(MockVar):
         return MockVar(
             key=key,
             gen_expr=gen,
-            detect_re=MOCK_DETECTORS["mock_number"],
+            detect_re=re.compile(""),  # not auto-detectable
         )
 
 
@@ -81,7 +81,7 @@ class _TextVar(MockVar):
         return MockVar(
             key=key,
             gen_expr=f'secrets.token_hex({int(n) // 2 + 1})[:{n}]',
-            detect_re=MOCK_DETECTORS["mock_text"],
+            detect_re=re.compile(""),  # not auto-detectable
         )
 
 

@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS endpoint_diffs (
     target_record_id   INTEGER,
     method             TEXT NOT NULL,
     path               TEXT NOT NULL,
+    step_seq           INTEGER,
+    step_label         TEXT,
+    baseline_offset_ms INTEGER,
+    target_offset_ms   INTEGER,
     status_match       INTEGER NOT NULL,
     baseline_status    INTEGER,
     target_status      INTEGER,
@@ -98,6 +102,10 @@ class DiffDB:
         target_record_id: int | None,
         method: str,
         path: str,
+        step_seq: int | None = None,
+        step_label: str | None = None,
+        baseline_offset_ms: int | None = None,
+        target_offset_ms: int | None = None,
         status_match: bool,
         baseline_status: int | None,
         target_status: int | None,
@@ -119,14 +127,16 @@ class DiffDB:
         self._conn.execute(
             """INSERT INTO endpoint_diffs
                (scenario, baseline_record_id, target_record_id, method, path,
+                step_seq, step_label, baseline_offset_ms, target_offset_ms,
                 status_match, baseline_status, target_status,
                 structure_match, diff_summary, value_match, value_diff,
                 baseline_url, baseline_request, baseline_response,
                 baseline_timestamp, baseline_duration,
                 target_url, target_request, target_response,
                 target_timestamp, target_duration)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (scenario, baseline_record_id, target_record_id, method, path,
+             step_seq, step_label, baseline_offset_ms, target_offset_ms,
              int(status_match), baseline_status, target_status,
              int(structure_match), diff_summary,
              int(value_match), value_diff,
@@ -157,7 +167,7 @@ class DiffDB:
 
     def get_endpoint_diffs(self) -> list[dict[str, Any]]:
         rows = self._conn.execute(
-            "SELECT * FROM endpoint_diffs ORDER BY id"
+            "SELECT * FROM endpoint_diffs ORDER BY scenario, COALESCE(step_seq, 999999), id"
         ).fetchall()
         return [dict(r) for r in rows]
 
