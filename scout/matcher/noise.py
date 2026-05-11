@@ -19,10 +19,21 @@ class IgnoreRule:
 
 @dataclass(frozen=True)
 class StatusOnlyRule:
-    """Match (scenario, path, step_seq) — only compare status_code."""
+    """Match (scenario, method, path, step_seq) — only compare status_code."""
     scenario: str    # glob pattern, "*" matches all
+    method: str      # HTTP method glob, "*" matches all
     path: str        # glob pattern for API path
     step_seq: str    # "*" | "3" | "1-5" range
+
+
+@dataclass(frozen=True)
+class KnownChange:
+    """A known structural change tied to a version."""
+    endpoint: str      # "METHOD /path/pattern", e.g. "POST /admin/product-categories/*"
+    path: str          # $.field.path expression
+    change: str        # "added" | "removed"
+    since: str         # semver string, e.g. "2.14.0"
+    note: str = ""
 
 
 @dataclass(frozen=True)
@@ -33,11 +44,19 @@ class DiffIgnoreConfig:
     value_types: tuple[str, ...] = ()
     overrides: tuple[tuple[str, IgnoreRule], ...] = ()
     status_only: tuple[StatusOnlyRule, ...] = ()
+    known_changes: tuple[KnownChange, ...] = ()
+    # Extra response-header names to ignore on top of DEFAULT_HEADER_IGNORE
+    # (compare.py). Lowercased on load for case-insensitive matching.
+    header_ignore: tuple[str, ...] = ()
 
-    def is_status_only(self, scenario: str, path: str, step_seq: int | None) -> bool:
-        """Return True if this (scenario, path, step_seq) should only compare status_code."""
+    def is_status_only(
+        self, scenario: str, method: str, path: str, step_seq: int | None,
+    ) -> bool:
+        """Return True if (scenario, method, path, step_seq) should only compare status_code."""
         for rule in self.status_only:
             if not fnmatch(scenario, rule.scenario):
+                continue
+            if not fnmatch(method.upper(), rule.method.upper()):
                 continue
             if not fnmatch(path, rule.path):
                 continue
@@ -120,17 +139,95 @@ def _endpoint_matches(pattern: str, method: str, path: str) -> bool:
     return fnmatch(path, p_path)
 
 
+# -- Version-aware known changes --
+
+
+def _parse_semver(v: str) -> tuple[int, ...]:
+    """Parse a version string into a tuple of ints for comparison."""
+    parts = []
+    for p in v.split("."):
+        try:
+            parts.append(int(p))
+        except ValueError:
+            # Strip non-numeric suffix (e.g. "14-beta" → 14)
+            m = re.match(r"(\d+)", p)
+            parts.append(int(m.group(1)) if m else 0)
+    return tuple(parts)
+
+
+def _version_gte(version: str, since: str) -> bool:
+    """Return True if version >= since using semver comparison."""
+    return _parse_semver(version) >= _parse_semver(since)
+
+
+def filter_known_changes(
+    diff_text: str,
+    known_changes: tuple[KnownChange, ...],
+    target_version: str,
+    method: str = "",
+    api_path: str = "",
+) -> str:
+    """Remove structure diff lines that match known version changes.
+
+    A '+ path: type' line is suppressed if a known_change with change='added'
+    exists for that path, the endpoint matches, and target_version >= since.
+
+    A '- path: type' line is suppressed if change='removed' and same conditions.
+    """
+    if not known_changes or not target_version or not diff_text:
+        return diff_text
+
+    added_paths: set[str] = set()
+    removed_paths: set[str] = set()
+    for kc in known_changes:
+        if not _version_gte(target_version, kc.since):
+            continue
+        if kc.endpoint and method and api_path:
+            if not _endpoint_matches(kc.endpoint, method, api_path):
+                continue
+        if kc.change == "added":
+            added_paths.add(kc.path)
+        elif kc.change == "removed":
+            removed_paths.add(kc.path)
+
+    if not added_paths and not removed_paths:
+        return diff_text
+
+    lines = []
+    for line in diff_text.split("\n"):
+        p = _extract_diff_path(line)
+        if p:
+            if line.startswith("+ ") and _known_path_matches(p, added_paths):
+                continue
+            if line.startswith("- ") and _known_path_matches(p, removed_paths):
+                continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _known_path_matches(diff_path: str, known_paths: set[str]) -> bool:
+    """Check if a diff path matches any known change path (with [*] support)."""
+    for kp in known_paths:
+        if kp == diff_path:
+            return True
+        regex = _path_expr_to_regex(kp)
+        if regex.match(diff_path):
+            return True
+    return False
+
+
 # -- Path expression matching --
 
 
 def _path_expr_to_regex(expr: str) -> re.Pattern[str]:
     """Convert a path expression like $.orders[*].created_at to a regex.
 
-    [*] matches any array index [0], [1], etc.
+    Both [*] (xpath-style) and [] (jsonpath-style) match any array index.
     """
-    # Escape dots and brackets, then replace [*] with [\d+]
+    # Escape dots and brackets, then replace wildcards with \d+
     pattern = re.escape(expr)
     pattern = pattern.replace(r"\[\*\]", r"\[\d+\]")
+    pattern = pattern.replace(r"\[\]", r"\[\d+\]")
     return re.compile("^" + pattern + "$")
 
 
@@ -316,13 +413,53 @@ def load_diff_ignore(data: dict[str, Any] | None) -> DiffIgnoreConfig:
                 ),
             ))
 
+    from scout.matcher.normalize import _is_id_segment
+
+    def _split_endpoint(endpoint: str) -> tuple[str, str]:
+        """Split 'METHOD /path' into (method, path). Lone path → ('*', path)."""
+        s = endpoint.strip()
+        if " " in s:
+            method, _, path = s.partition(" ")
+            return method.strip() or "*", path.strip() or "*"
+        return "*", s or "*"
+
     status_only: list[StatusOnlyRule] = []
     for so in data.get("status_only", []):
+        # Prefer the new `endpoint` form ("METHOD /path") that mirrors known_changes.
+        # Legacy: fall back to `path` (with implicit method="*") for backward compat.
+        if "endpoint" in so:
+            raw_method, raw_path = _split_endpoint(so["endpoint"])
+        else:
+            raw_method = "*"
+            raw_path = so.get("path", "*")
+        # Auto-templatize concrete ID segments in the path part
+        if raw_path != "*" and "*" not in raw_path:
+            segments = raw_path.split("/")
+            raw_path = "/".join("*" if s and _is_id_segment(s) else s for s in segments)
         status_only.append(StatusOnlyRule(
             scenario=so.get("scenario", "*"),
-            path=so.get("path", "*"),
+            method=raw_method,
+            path=raw_path,
             step_seq=str(so.get("step_seq", "*")),
         ))
+
+    known_changes: list[KnownChange] = []
+    for kc in data.get("known_changes", []):
+        change = kc.get("change", "")
+        if change in ("added", "removed") and kc.get("path") and kc.get("since"):
+            known_changes.append(KnownChange(
+                endpoint=kc.get("endpoint", "*"),
+                path=kc["path"],
+                change=change,
+                since=kc["since"],
+                note=kc.get("note", ""),
+            ))
+
+    # Response-header ignore list (extends DEFAULT_HEADER_IGNORE in compare.py).
+    # Lowercase here so comparison can be case-insensitive without per-call work.
+    header_ignore = tuple(
+        str(h).lower() for h in data.get("header_ignore", []) if h
+    )
 
     return DiffIgnoreConfig(
         fields=tuple(simple_fields),
@@ -330,4 +467,6 @@ def load_diff_ignore(data: dict[str, Any] | None) -> DiffIgnoreConfig:
         value_types=value_types,
         overrides=tuple(overrides),
         status_only=tuple(status_only),
+        known_changes=tuple(known_changes),
+        header_ignore=header_ignore,
     )

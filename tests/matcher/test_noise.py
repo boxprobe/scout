@@ -283,3 +283,211 @@ class TestComparePairWithIgnore:
         rule = IgnoreRule(fields=("ts",), value_types=("uuid",))
         diff = compare_pair(base, target, ignore=rule)
         assert diff.value_match is True
+
+
+# -- status_only schema: endpoint form (preferred) + legacy path fallback --
+
+class TestStatusOnlySchema:
+    def test_endpoint_form_method_match(self) -> None:
+        """endpoint='GET /admin/orders' matches GET but not POST."""
+        cfg = load_diff_ignore({
+            "status_only": [
+                {"endpoint": "GET /admin/orders", "scenario": "*", "step_seq": "*"},
+            ]
+        })
+        assert cfg.is_status_only("any/scenario", "GET", "/admin/orders", 1) is True
+        assert cfg.is_status_only("any/scenario", "POST", "/admin/orders", 1) is False
+
+    def test_endpoint_form_wildcard_method(self) -> None:
+        """endpoint='* /admin/orders' matches any method."""
+        cfg = load_diff_ignore({
+            "status_only": [
+                {"endpoint": "* /admin/orders", "scenario": "*", "step_seq": "*"},
+            ]
+        })
+        assert cfg.is_status_only("s", "GET", "/admin/orders", 1) is True
+        assert cfg.is_status_only("s", "POST", "/admin/orders", 1) is True
+        assert cfg.is_status_only("s", "DELETE", "/admin/orders", 1) is True
+
+    def test_legacy_path_form(self) -> None:
+        """Legacy entries with `path` (no `endpoint`) match any method."""
+        cfg = load_diff_ignore({
+            "status_only": [
+                {"path": "/admin/orders", "scenario": "*", "step_seq": "*"},
+            ]
+        })
+        assert cfg.is_status_only("s", "GET", "/admin/orders", 1) is True
+        assert cfg.is_status_only("s", "POST", "/admin/orders", 1) is True
+
+    def test_endpoint_form_with_path_glob(self) -> None:
+        """endpoint='POST /admin/orders/*' matches POST + ID path."""
+        cfg = load_diff_ignore({
+            "status_only": [
+                {"endpoint": "POST /admin/orders/*", "scenario": "*", "step_seq": "*"},
+            ]
+        })
+        assert cfg.is_status_only("s", "POST", "/admin/orders/order_01HA", 1) is True
+        assert cfg.is_status_only("s", "POST", "/admin/orders", 1) is False
+        assert cfg.is_status_only("s", "GET",  "/admin/orders/order_01HA", 1) is False
+
+    def test_endpoint_id_segments_auto_templatized(self) -> None:
+        """Concrete IDs in endpoint path get auto-replaced with '*' on load,
+        matching the same behavior as the legacy `path` form."""
+        cfg = load_diff_ignore({
+            "status_only": [
+                {"endpoint": "DELETE /admin/api-keys/apk_01ABC", "scenario": "*", "step_seq": "*"},
+            ]
+        })
+        # The concrete apk_01ABC should match any apk_* via templatization
+        assert cfg.is_status_only("s", "DELETE", "/admin/api-keys/apk_99XYZ", 1) is True
+        assert cfg.is_status_only("s", "DELETE", "/admin/api-keys", 1) is False
+
+    def test_mixed_legacy_and_new_form(self) -> None:
+        """Both forms can coexist in the same config."""
+        cfg = load_diff_ignore({
+            "status_only": [
+                {"endpoint": "GET /admin/orders", "scenario": "*", "step_seq": "*"},
+                {"path": "/admin/api-keys", "scenario": "*", "step_seq": "*"},
+            ]
+        })
+        assert cfg.is_status_only("s", "GET", "/admin/orders", 1) is True
+        assert cfg.is_status_only("s", "POST", "/admin/orders", 1) is False  # method-locked
+        assert cfg.is_status_only("s", "POST", "/admin/api-keys", 1) is True  # legacy = any method
+
+    def test_method_case_insensitive(self) -> None:
+        """Method matching is case-insensitive."""
+        cfg = load_diff_ignore({
+            "status_only": [{"endpoint": "get /admin/orders", "scenario": "*", "step_seq": "*"}]
+        })
+        assert cfg.is_status_only("s", "GET", "/admin/orders", 1) is True
+        assert cfg.is_status_only("s", "get", "/admin/orders", 1) is True
+
+    def test_step_seq_still_filters(self) -> None:
+        """step_seq narrowing still works alongside method filtering."""
+        cfg = load_diff_ignore({
+            "status_only": [
+                {"endpoint": "GET /admin/orders", "scenario": "*", "step_seq": "3"},
+            ]
+        })
+        assert cfg.is_status_only("s", "GET", "/admin/orders", 3) is True
+        assert cfg.is_status_only("s", "GET", "/admin/orders", 4) is False
+
+
+# -- header_ignore: extending the built-in DEFAULT_HEADER_IGNORE --
+
+class TestHeaderIgnoreSchema:
+    def test_loads_header_ignore_array(self) -> None:
+        cfg = load_diff_ignore({
+            "header_ignore": ["Access-Control-Allow-Origin", "X-Custom-Trace"],
+        })
+        # Lowercased on load for case-insensitive comparison
+        assert "access-control-allow-origin" in cfg.header_ignore
+        assert "x-custom-trace" in cfg.header_ignore
+
+    def test_empty_when_field_absent(self) -> None:
+        assert load_diff_ignore({}).header_ignore == ()
+
+    def test_extra_ignore_suppresses_matching_header_in_diff(self) -> None:
+        """compare_pair with header_ignore=('access-control-allow-origin',)
+        should not produce a header_diff for that header even when it differs."""
+        import json as _json
+        baseline = {
+            "status_code": 200,
+            "response_body": '{}',
+            "response_headers": _json.dumps({
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "http://localhost:19000",
+            }),
+        }
+        target = {
+            "status_code": 200,
+            "response_body": '{}',
+            "response_headers": _json.dumps({
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "http://localhost:29000",
+            }),
+        }
+        # Without ignore: header_diff surfaces the change
+        d1 = compare_pair(baseline, target)
+        assert d1.header_match is False
+        assert "access-control-allow-origin" in d1.header_diff
+        # With ignore: silenced
+        d2 = compare_pair(baseline, target, header_ignore=("access-control-allow-origin",))
+        assert d2.header_match is True
+        assert d2.header_diff == ""
+
+    def test_default_ignores_still_apply(self) -> None:
+        """Built-in DEFAULT_HEADER_IGNORE (Date, ETag, X-Request-ID, etc.) keeps
+        working when extra_ignore is empty."""
+        import json as _json
+        baseline = {
+            "status_code": 200,
+            "response_body": '{}',
+            "response_headers": _json.dumps({
+                "Date": "Mon, 11 May 2026 00:00:00 GMT",
+                "X-Request-ID": "abc123",
+            }),
+        }
+        target = {
+            "status_code": 200,
+            "response_body": '{}',
+            "response_headers": _json.dumps({
+                "Date": "Mon, 11 May 2026 00:00:01 GMT",
+                "X-Request-ID": "xyz999",
+            }),
+        }
+        d = compare_pair(baseline, target)
+        assert d.header_match is True
+        assert d.header_diff == ""
+
+
+# -- known_changes path syntax: [*] xpath-style AND [] jsonpath-style both valid --
+
+class TestKnownChangeArrayWildcard:
+    def test_xpath_star_wildcard_matches_concrete_index(self) -> None:
+        """[*] wildcard already worked — keep regression coverage."""
+        from scout.matcher.noise import filter_known_changes, KnownChange
+        kc = (KnownChange(
+            endpoint="GET /admin/collections",
+            path="$.collections[*].external_id",
+            change="added", since="2.14.0",
+        ),)
+        diff = "+ $.collections[0].external_id: null"
+        result = filter_known_changes(diff, kc, "2.14.0", method="GET", api_path="/admin/collections")
+        assert result == ""
+
+    def test_jsonpath_empty_brackets_also_match(self) -> None:
+        """[] (jsonpath shorthand for any index) should be equivalent to [*]."""
+        from scout.matcher.noise import filter_known_changes, KnownChange
+        kc = (KnownChange(
+            endpoint="GET /admin/collections",
+            path="$.collections[].external_id",
+            change="added", since="2.14.0",
+        ),)
+        diff = "+ $.collections[0].external_id: null"
+        result = filter_known_changes(diff, kc, "2.14.0", method="GET", api_path="/admin/collections")
+        assert result == ""
+
+    def test_mixed_wildcards_both_match(self) -> None:
+        """Path with both [*] and [] should normalize uniformly."""
+        from scout.matcher.noise import filter_known_changes, KnownChange
+        kc = (KnownChange(
+            endpoint="GET /admin/orders",
+            path="$.orders[].items[*].sku",
+            change="added", since="2.14.0",
+        ),)
+        diff = "+ $.orders[2].items[5].sku: string"
+        result = filter_known_changes(diff, kc, "2.14.0", method="GET", api_path="/admin/orders")
+        assert result == ""
+
+    def test_concrete_index_doesnt_match_other_indices(self) -> None:
+        """A rule with a literal [0] should NOT silence [1]. Wildcards are explicit."""
+        from scout.matcher.noise import filter_known_changes, KnownChange
+        kc = (KnownChange(
+            endpoint="GET /admin/collections",
+            path="$.collections[0].external_id",
+            change="added", since="2.14.0",
+        ),)
+        diff = "+ $.collections[1].external_id: null"
+        result = filter_known_changes(diff, kc, "2.14.0", method="GET", api_path="/admin/collections")
+        assert result == diff  # not silenced

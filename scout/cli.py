@@ -360,16 +360,17 @@ def analyze() -> None:
 @click.argument("baseline", required=True)
 @click.argument("target", required=True)
 @click.option("--detail/--no-detail", default=False, help="Include raw request/response data in diff.")
-@click.option("--serve/--no-serve", default=False, help="Start local server for interactive report editing.")
-@click.option("--port", default=8675, type=int, help="Server port (default: 8675).")
-def diff(baseline: str, target: str, detail: bool, serve: bool, port: int) -> None:
+def diff(baseline: str, target: str, detail: bool) -> None:
     """Compare API recordings between two runs."""
+    from urllib.parse import urlparse
+
     from scout.collector.db import RecordingDB
     from scout.config import load_app_config
     from scout.matcher.align import align_records
     from scout.matcher.compare import compare_pair
     from scout.matcher.diff_db import DiffDB
     from scout.matcher.diff_report import generate_diff_html
+    from scout.matcher.normalize import extract_dynamic_pairs
 
     repo_root = Path.cwd()
     scout_dir = repo_root / ".scout"
@@ -418,17 +419,51 @@ def diff(baseline: str, target: str, detail: bool, serve: bool, port: int) -> No
         target_version=target_ver,
     )
 
+    def _always_kwargs(rec: dict, prefix: str) -> dict:
+        """Small fields that are always stored regardless of --detail.
+        Duration enables latency-delta sorting in the report; it's just an int.
+        """
+        return {
+            f"{prefix}_duration": rec.get("duration_ms"),
+        }
+
     def _detail_kwargs(rec: dict, prefix: str) -> dict:
-        """Extract raw data kwargs for insert_endpoint_diff when --detail."""
+        """Heavy fields only stored when --detail (bodies, headers, full URLs)."""
         if not detail:
             return {}
         return {
             f"{prefix}_url": rec.get("url"),
             f"{prefix}_request": rec.get("request_body"),
             f"{prefix}_response": rec.get("response_body"),
+            f"{prefix}_request_headers": rec.get("request_headers"),
+            f"{prefix}_response_headers": rec.get("response_headers"),
             f"{prefix}_timestamp": rec.get("timestamp"),
-            f"{prefix}_duration": rec.get("duration_ms"),
         }
+
+    def _normalize_dynamic_ids(
+        rec: dict, dyn_pairs: list[tuple[str, str]], side: str,
+    ) -> dict:
+        """Substitute dynamic path segments in request/response bodies with stable
+        placeholders, so paired records that differ only by path-derived IDs compare
+        as equal. Returns a shallow copy; original record is untouched.
+
+        Each (baseline_seg, target_seg) pair gets its own indexed placeholder, so
+        multiple dynamic segments in the same path don't collide.
+        """
+        if not dyn_pairs:
+            return rec
+        out = dict(rec)
+        for body_key in ("request_body", "response_body"):
+            body = out.get(body_key)
+            if not isinstance(body, str):
+                continue
+            for i, (a, b) in enumerate(dyn_pairs):
+                value = a if side == "baseline" else b
+                if not value:
+                    continue
+                body = body.replace(value, f"__SCOUT_DYN_{i}__")
+            out[body_key] = body
+        return out
 
     def _build_step_labels(rdb: RecordingDB, session_id: int) -> dict[int, str]:
         """Build seq → label mapping from steps table."""
@@ -478,7 +513,7 @@ def diff(baseline: str, target: str, detail: bool, serve: bool, port: int) -> No
                     step_label = step_labels.get(step_seq) if step_seq else None
 
                     # status_only: skip structure/value diff for matching rules
-                    if diff_ignore_cfg.is_status_only(scenario_name, pair.path, step_seq):
+                    if diff_ignore_cfg.is_status_only(scenario_name, pair.method, pair.path, step_seq):
                         b_status = pair.baseline.get("status_code")
                         t_status = pair.target.get("status_code")
                         result_status_match = b_status == t_status
@@ -501,13 +536,31 @@ def diff(baseline: str, target: str, detail: bool, serve: bool, port: int) -> No
                             diff_summary="",
                             value_match=True,
                             value_diff="",
+                            **_always_kwargs(pair.baseline, "baseline"),
+                            **_always_kwargs(pair.target, "target"),
                             **_detail_kwargs(pair.baseline, "baseline"),
                             **_detail_kwargs(pair.target, "target"),
                         )
                         continue
 
                     ignore_rule = diff_ignore_cfg.rule_for(pair.method, pair.path)
-                    result = compare_pair(pair.baseline, pair.target, ignore=ignore_rule)
+                    # Replace path-derived dynamic IDs with stable placeholders before
+                    # comparing — eliminates noise from per-run-unique IDs leaking from
+                    # the URL into request/response bodies.
+                    dyn_pairs = extract_dynamic_pairs(
+                        urlparse(pair.baseline.get("url") or "").path,
+                        urlparse(pair.target.get("url") or "").path,
+                    )
+                    baseline_for_compare = _normalize_dynamic_ids(pair.baseline, dyn_pairs, "baseline")
+                    target_for_compare = _normalize_dynamic_ids(pair.target, dyn_pairs, "target")
+                    result = compare_pair(
+                        baseline_for_compare, target_for_compare,
+                        ignore=ignore_rule,
+                        known_changes=diff_ignore_cfg.known_changes,
+                        target_version=target_ver,
+                        api_path=pair.path,
+                        header_ignore=diff_ignore_cfg.header_ignore,
+                    )
                     b_id = pair.baseline.get("id")
                     t_id = pair.target.get("id")
                     ddb.insert_endpoint_diff(
@@ -527,6 +580,10 @@ def diff(baseline: str, target: str, detail: bool, serve: bool, port: int) -> No
                         diff_summary=result.diff_summary,
                         value_match=result.value_match,
                         value_diff=result.value_diff,
+                        header_match=result.header_match,
+                        header_diff=result.header_diff,
+                        **_always_kwargs(pair.baseline, "baseline"),
+                        **_always_kwargs(pair.target, "target"),
                         **_detail_kwargs(pair.baseline, "baseline"),
                         **_detail_kwargs(pair.target, "target"),
                     )
@@ -588,7 +645,7 @@ def diff(baseline: str, target: str, detail: bool, serve: bool, port: int) -> No
     di_path = repo_root / "diff_ignore.json"
     di_raw = _json.loads(di_path.read_text(encoding="utf-8")) if di_path.exists() else {}
     generate_diff_html(meta, diffs, missing, summary, diff_dir / "report.html",
-                       diff_ignore=di_raw)
+                       diff_ignore=di_raw, repo_root=repo_root)
 
     # Print summary
     has_issues = summary["status_mismatches"] + summary["structure_mismatches"] + summary["missing_endpoints"]
@@ -607,8 +664,5 @@ def diff(baseline: str, target: str, detail: bool, serve: bool, port: int) -> No
     click.echo(f"Report: {diff_dir / 'report.html'}")
     click.echo(f"Data:   {diff_dir / 'diff.db'}")
 
-    if serve:
-        from scout.matcher.diff_server import serve_report
-        serve_report(diff_dir, repo_root, port)
-    elif has_issues:
+    if has_issues:
         raise SystemExit(1)

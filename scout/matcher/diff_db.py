@@ -30,16 +30,22 @@ CREATE TABLE IF NOT EXISTS endpoint_diffs (
     diff_summary       TEXT,
     value_match        INTEGER,
     value_diff         TEXT,
-    baseline_url       TEXT,
-    baseline_request   TEXT,
-    baseline_response  TEXT,
-    baseline_timestamp TEXT,
-    baseline_duration  INTEGER,
-    target_url         TEXT,
-    target_request     TEXT,
-    target_response    TEXT,
-    target_timestamp   TEXT,
-    target_duration    INTEGER
+    baseline_url               TEXT,
+    baseline_request           TEXT,
+    baseline_response          TEXT,
+    baseline_request_headers   TEXT,
+    baseline_response_headers  TEXT,
+    baseline_timestamp         TEXT,
+    baseline_duration          INTEGER,
+    target_url                 TEXT,
+    target_request             TEXT,
+    target_response            TEXT,
+    target_request_headers     TEXT,
+    target_response_headers    TEXT,
+    target_timestamp           TEXT,
+    target_duration            INTEGER,
+    header_match               INTEGER,
+    header_diff                TEXT
 );
 
 CREATE TABLE IF NOT EXISTS missing_endpoints (
@@ -116,13 +122,19 @@ class DiffDB:
         baseline_url: str | None = None,
         baseline_request: str | None = None,
         baseline_response: str | None = None,
+        baseline_request_headers: str | None = None,
+        baseline_response_headers: str | None = None,
         baseline_timestamp: str | None = None,
         baseline_duration: int | None = None,
         target_url: str | None = None,
         target_request: str | None = None,
         target_response: str | None = None,
+        target_request_headers: str | None = None,
+        target_response_headers: str | None = None,
         target_timestamp: str | None = None,
         target_duration: int | None = None,
+        header_match: bool = True,
+        header_diff: str = "",
     ) -> None:
         self._conn.execute(
             """INSERT INTO endpoint_diffs
@@ -131,19 +143,25 @@ class DiffDB:
                 status_match, baseline_status, target_status,
                 structure_match, diff_summary, value_match, value_diff,
                 baseline_url, baseline_request, baseline_response,
+                baseline_request_headers, baseline_response_headers,
                 baseline_timestamp, baseline_duration,
                 target_url, target_request, target_response,
-                target_timestamp, target_duration)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                target_request_headers, target_response_headers,
+                target_timestamp, target_duration,
+                header_match, header_diff)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (scenario, baseline_record_id, target_record_id, method, path,
              step_seq, step_label, baseline_offset_ms, target_offset_ms,
              int(status_match), baseline_status, target_status,
              int(structure_match), diff_summary,
              int(value_match), value_diff,
              baseline_url, baseline_request, baseline_response,
+             baseline_request_headers, baseline_response_headers,
              baseline_timestamp, baseline_duration,
              target_url, target_request, target_response,
-             target_timestamp, target_duration),
+             target_request_headers, target_response_headers,
+             target_timestamp, target_duration,
+             int(header_match), header_diff),
         )
         self._conn.commit()
 
@@ -167,7 +185,7 @@ class DiffDB:
 
     def get_endpoint_diffs(self) -> list[dict[str, Any]]:
         rows = self._conn.execute(
-            "SELECT * FROM endpoint_diffs ORDER BY scenario, COALESCE(step_seq, 999999), id"
+            "SELECT * FROM endpoint_diffs ORDER BY scenario, COALESCE(step_seq, 999999), COALESCE(baseline_offset_ms, 999999999), id"
         ).fetchall()
         return [dict(r) for r in rows]
 

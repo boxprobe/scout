@@ -9,8 +9,10 @@ from typing import Any
 from scout.matcher.noise import (
     DiffIgnoreConfig,
     IgnoreRule,
+    KnownChange,
     filter_body,
     filter_diff_lines,
+    filter_known_changes,
     should_ignore_value_diff,
 )
 
@@ -25,6 +27,80 @@ class EndpointDiff:
     diff_summary: str = ""
     value_match: bool = True
     value_diff: str = ""
+    header_match: bool = True
+    header_diff: str = ""
+
+
+# Headers that are expected to differ between runs / environments and carry
+# no test-signal value. Kept lowercase since HTTP header names are case-insensitive.
+DEFAULT_HEADER_IGNORE: frozenset[str] = frozenset({
+    "date",
+    "etag",
+    "if-none-match",
+    "last-modified",
+    "x-request-id",
+    "x-trace-id",
+    "x-correlation-id",
+    "x-runtime",
+    "server",
+    "x-powered-by",
+    "set-cookie",
+    "cookie",
+    "content-length",  # auto-derived from body
+    "host",            # always differs between environments
+})
+
+
+def _parse_headers(raw: str | None) -> dict[str, str]:
+    """Parse headers from JSON-encoded TEXT (as recorded by the proxy).
+    Lowercases keys for case-insensitive comparison. Returns {} on bad input.
+    """
+    if not raw:
+        return {}
+    try:
+        obj = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    if not isinstance(obj, dict):
+        return {}
+    return {str(k).lower(): str(v) for k, v in obj.items()}
+
+
+def diff_response_headers(
+    baseline_raw: str | None,
+    target_raw: str | None,
+    ignore: frozenset[str] | set[str] = DEFAULT_HEADER_IGNORE,
+    extra_ignore: tuple[str, ...] = (),
+) -> str:
+    """Produce a unified-style diff text for response headers.
+
+    Output format mirrors diff_summary / value_diff:
+      + name: value      (target only)
+      - name: value      (baseline only)
+      ~ name: a -> b     (changed)
+    Empty string when nothing meaningful differs.
+    """
+    b = _parse_headers(baseline_raw)
+    t = _parse_headers(target_raw)
+    if not b and not t:
+        return ""
+    # Merge built-in defaults with any user-supplied extra ignores from diff_ignore.json.
+    # extra_ignore is already lowercased by the loader; defensive .lower() costs nothing.
+    effective_ignore = set(ignore) | {h.lower() for h in extra_ignore}
+    keys = (set(b) | set(t)) - effective_ignore
+    lines: list[str] = []
+    for name in sorted(keys):
+        b_val = b.get(name)
+        t_val = t.get(name)
+        if b_val == t_val:
+            continue
+        if b_val is None:
+            lines.append(f"+ {name}: {t_val}")
+        elif t_val is None:
+            lines.append(f"- {name}: {b_val}")
+        else:
+            lines.append(f"~ {name}: {b_val} -> {t_val}")
+    return "\n".join(lines)
 
 
 def _json_schema(obj: Any, path: str = "$") -> dict[str, str]:
@@ -147,6 +223,10 @@ def compare_pair(
     baseline: dict,
     target: dict,
     ignore: IgnoreRule | None = None,
+    known_changes: tuple[KnownChange, ...] = (),
+    target_version: str = "",
+    api_path: str = "",
+    header_ignore: tuple[str, ...] = (),
 ) -> EndpointDiff:
     """Compare a baseline and target API record.
 
@@ -212,9 +292,19 @@ def compare_pair(
     structure_match = (b_schema == t_schema)
     diff_summary = "" if structure_match else _diff_schemas(b_schema, t_schema)
 
-    # Post-filter structure diff by path expressions too
+    # Post-filter structure diff by path expressions
     if ignore and ignore.paths and diff_summary:
         diff_summary = filter_diff_lines(diff_summary, ignore.paths)
+        structure_match = not bool(diff_summary.strip())
+
+    # Post-filter by known version changes (structure + value)
+    method = baseline.get("method", "") or target.get("method", "")
+
+    if known_changes and target_version and diff_summary:
+        diff_summary = filter_known_changes(
+            diff_summary, known_changes, target_version,
+            method=method, api_path=api_path,
+        )
         structure_match = not bool(diff_summary.strip())
 
     # Compare values (with value-type noise suppression)
@@ -225,7 +315,22 @@ def compare_pair(
     if ignore and ignore.paths and value_diff:
         value_diff = filter_diff_lines(value_diff, ignore.paths)
 
+    if known_changes and target_version and value_diff:
+        value_diff = filter_known_changes(
+            value_diff, known_changes, target_version,
+            method=method, api_path=api_path,
+        )
+
     value_match = not bool(value_diff)
+
+    # Response header diff (request headers usually differ noisily — auth tokens,
+    # session-bound identifiers — and have low signal value, so skip).
+    header_diff = diff_response_headers(
+        baseline.get("response_headers"),
+        target.get("response_headers"),
+        extra_ignore=header_ignore,
+    )
+    header_match = not bool(header_diff)
 
     return EndpointDiff(
         status_match=status_match,
@@ -235,4 +340,6 @@ def compare_pair(
         diff_summary=diff_summary,
         value_match=value_match,
         value_diff=value_diff,
+        header_match=header_match,
+        header_diff=header_diff,
     )

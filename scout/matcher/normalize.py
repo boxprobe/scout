@@ -63,3 +63,24 @@ def paths_match(path_a: str, path_b: str) -> bool:
     # All differing segments were ID-like; require at least one literal match
     # so that purely-ID paths (e.g. /123 vs /456) don't blindly match.
     return literal_match > 0 or len(segs_a) == 0
+
+
+def extract_dynamic_pairs(path_a: str, path_b: str) -> list[tuple[str, str]]:
+    """Return (baseline_seg, target_seg) for each diverging dynamic segment.
+
+    Only meaningful when paths_match(path_a, path_b) is True. Caller is responsible
+    for verifying that. Returns empty list if segment counts don't match.
+
+    Each tuple corresponds to one position in the path where baseline and target
+    differ AND at least one side looks like a dynamic ID. Order matches path order
+    so the i-th tuple is the i-th dynamic segment.
+    """
+    segs_a = path_a.strip("/").split("/")
+    segs_b = path_b.strip("/").split("/")
+    if len(segs_a) != len(segs_b):
+        return []
+    pairs: list[tuple[str, str]] = []
+    for a, b in zip(segs_a, segs_b):
+        if a != b and (_is_id_segment(a) or _is_id_segment(b)):
+            pairs.append((a, b))
+    return pairs
