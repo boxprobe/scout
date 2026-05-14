@@ -815,7 +815,13 @@ function extractIgnorables(text) {{
   var re = /^[\\u2260+\\-~]\\s+(\\$\\S+?):/gm;
   var m;
   while ((m = re.exec(text)) !== null) {{
-    var fullPath = m[1];
+    // Collapse concrete array indices to the wildcard form `[]` — users
+    // ignore "all entries in this list", not a specific index, so showing
+    // (and storing) $.product_categories[5].name as a click target is
+    // both wrong (won't match $.product_categories[12].name) and noisy
+    // (a separate button per index). This matches the convention in
+    // hand-written diff_ignore.json entries.
+    var fullPath = m[1].replace(/\\[\\d+\\]/g, '[]');
     items[fullPath] = true;
     // Also extract the leaf field name
     var dot = fullPath.lastIndexOf('.');
