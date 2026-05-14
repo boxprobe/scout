@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
-from scout.matcher.normalize import paths_match
+from scout.matcher.normalize import normalize_query, paths_match
 
 
 @dataclass
@@ -20,15 +20,23 @@ class AlignedPair:
 
 
 def _exact_key(record: dict) -> tuple[str, str, str]:
-    """Grouping key: (method, normalized_path, query_string).
+    """Grouping key: (method, normalized_path, normalized_query).
 
-    Path is normalized (trailing slash stripped). Query string is exact —
-    different query strings represent different logical API calls even when
-    they share the same path (e.g. ?limit=3 vs ?limit=20&offset=0).
+    Path is normalized (trailing slash stripped). Query is canonicalized by
+    sorting keys and replacing dynamic-looking values (UUIDs, prefixed IDs
+    like ``apk_…``, long hex/digit strings) with ``*``. So:
+
+      ?limit=10&offset=0&publishable_key_id=apk_AAA       ┐
+      ?limit=10&offset=0&publishable_key_id=apk_BBB       ┘ same key
+
+      ?limit=10&offset=0                          → different key (no key)
+      ?limit=20&offset=0&publishable_key_id=apk_AAA  → different (limit=20)
+      ?limit=10&offset=0&publishable_key_id=apk_AAA&extra=foo  → different
     """
     parsed = urlparse(record["url"])
     path = parsed.path.rstrip("/") or "/"
-    return (record["method"], path, parsed.query)
+    query = normalize_query(parsed.query)
+    return (record["method"], path, query)
 
 
 def align_records(

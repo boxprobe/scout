@@ -110,6 +110,29 @@ def test_same_query_different_id_in_path_still_pairs() -> None:
     assert len(paired) == 1
 
 
+def test_dynamic_id_in_query_value_still_pairs() -> None:
+    """Query strings whose only difference is a dynamic ID value must pair.
+
+    Regression for publishable-api-keys-crud step 8, where each run created a
+    different apk_id and the resulting `?publishable_key_id=apk_…` URLs
+    were treated as separate APIs by exact-query matching.
+    """
+    base = [_rec("GET", "http://h/admin/sales-channels?limit=10&offset=0&publishable_key_id=apk_01KRJQZKQXYQ6VZZP0F8738Y8S")]
+    target = [_rec("GET", "http://h/admin/sales-channels?limit=10&offset=0&publishable_key_id=apk_01KRJR6BPMZSWTBVA0VQT0VV25")]
+    result = align_records(base, target)
+    paired = [p for p in result if p.baseline and p.target]
+    assert len(paired) == 1
+
+
+def test_extra_query_key_does_not_pair() -> None:
+    """An additional query key changes the API identity, even with the same dynamic ID."""
+    base = [_rec("GET", "http://h/admin/sales-channels?limit=10&offset=0&publishable_key_id=apk_01KRJQZKQXYQ6VZZP0F8738Y8S")]
+    target = [_rec("GET", "http://h/admin/sales-channels?limit=10&offset=0&publishable_key_id=apk_01KRJR6BPMZSWTBVA0VQT0VV25&extra=foo")]
+    result = align_records(base, target)
+    paired = [p for p in result if p.baseline and p.target]
+    assert paired == []
+
+
 def test_repeated_same_url_pairs_in_occurrence_order() -> None:
     """Same URL fired N times → pair by occurrence order (timestamps)."""
     base = [

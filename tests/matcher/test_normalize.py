@@ -1,6 +1,6 @@
 """Tests for matcher/normalize.py — URL path normalization."""
 
-from scout.matcher.normalize import extract_dynamic_pairs, normalize_url, paths_match
+from scout.matcher.normalize import extract_dynamic_pairs, normalize_query, normalize_url, paths_match
 
 
 def test_strip_query_params() -> None:
@@ -94,3 +94,57 @@ def test_extract_dynamic_pairs_skips_literal_match() -> None:
 def test_extract_dynamic_pairs_pure_int() -> None:
     """Pure integer ID segments are extractable too."""
     assert extract_dynamic_pairs("/users/123", "/users/456") == [("123", "456")]
+
+
+# -- normalize_query ----------------------------------------------------------
+
+
+def test_normalize_query_empty() -> None:
+    assert normalize_query("") == ""
+
+
+def test_normalize_query_prefixed_id_masked() -> None:
+    """Prefixed IDs (apk_..., region_..., etc.) → masked."""
+    a = normalize_query("limit=10&offset=0&publishable_key_id=apk_01KRJQZKQXYQ6VZZP0F8738Y8S")
+    b = normalize_query("limit=10&offset=0&publishable_key_id=apk_01KRJR6BPMZSWTBVA0VQT0VV25")
+    assert a == b
+    assert "publishable_key_id=*" in a
+
+
+def test_normalize_query_non_dynamic_values_preserved() -> None:
+    """Short integers and enums must survive normalization."""
+    assert normalize_query("limit=10") == "limit=10"
+    assert normalize_query("type=publishable") == "type=publishable"
+    assert normalize_query("offset=0") == "offset=0"
+
+
+def test_normalize_query_different_limit_not_same() -> None:
+    """limit=10 and limit=20 are different APIs in a paginated list."""
+    assert normalize_query("limit=10") != normalize_query("limit=20")
+
+
+def test_normalize_query_extra_key_not_same() -> None:
+    """Adding a new query key changes the API identity."""
+    a = normalize_query("limit=10&offset=0&publishable_key_id=apk_ABCDEFGHIJ")
+    b = normalize_query("limit=10&offset=0&publishable_key_id=apk_ABCDEFGHIJ&extra=foo")
+    assert a != b
+
+
+def test_normalize_query_uuid_masked() -> None:
+    a = normalize_query("user=f47ac10b-58cc-4372-a567-0e02b2c3d479")
+    b = normalize_query("user=12345678-90ab-4cde-9012-3456789abcde")
+    assert a == b == "user=*"
+
+
+def test_normalize_query_sorted_canonical() -> None:
+    """Different key order normalizes to the same canonical string."""
+    a = normalize_query("limit=10&offset=0")
+    b = normalize_query("offset=0&limit=10")
+    assert a == b
+
+
+def test_normalize_query_long_digit_string_masked() -> None:
+    """8+ digit numbers (timestamps, big ids) treated as dynamic."""
+    a = normalize_query("created_at=1716800000")
+    b = normalize_query("created_at=1716900000")
+    assert a == b
