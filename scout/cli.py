@@ -588,46 +588,106 @@ def diff(baseline: str, target: str, detail: bool) -> None:
                         **_detail_kwargs(pair.target, "target"),
                     )
                 elif pair.baseline is not None:
-                    ddb.insert_missing_endpoint(
+                    # Endpoint present only in baseline — insert into the unified
+                    # endpoint_diffs table with target side NULL. status_match etc.
+                    # are True (nothing to compare), and the "missing" classification
+                    # is derived from target_record_id IS NULL.
+                    b_id = pair.baseline.get("id")
+                    step_seq = pair.baseline.get("step_seq")
+                    step_label = step_labels.get(step_seq) if step_seq else None
+                    ddb.insert_endpoint_diff(
                         scenario=scenario_name,
-                        side="baseline",
-                        record_id=pair.baseline.get("id", 0),
+                        baseline_record_id=b_id,
+                        target_record_id=None,
                         method=pair.method,
                         path=pair.path,
-                        status_code=pair.baseline.get("status_code"),
+                        step_seq=step_seq,
+                        step_label=step_label,
+                        baseline_offset_ms=base_offsets.get(b_id) if b_id else None,
+                        target_offset_ms=None,
+                        status_match=True,
+                        baseline_status=pair.baseline.get("status_code"),
+                        target_status=None,
+                        structure_match=True,
+                        diff_summary="",
+                        value_match=True,
+                        value_diff="",
+                        **_always_kwargs(pair.baseline, "baseline"),
+                        **_detail_kwargs(pair.baseline, "baseline"),
                     )
                 elif pair.target is not None:
-                    ddb.insert_missing_endpoint(
+                    t_id = pair.target.get("id")
+                    step_seq = pair.target.get("step_seq")
+                    step_label = step_labels.get(step_seq) if step_seq else None
+                    ddb.insert_endpoint_diff(
                         scenario=scenario_name,
-                        side="target",
-                        record_id=pair.target.get("id", 0),
+                        baseline_record_id=None,
+                        target_record_id=t_id,
                         method=pair.method,
                         path=pair.path,
-                        status_code=pair.target.get("status_code"),
+                        step_seq=step_seq,
+                        step_label=step_label,
+                        baseline_offset_ms=None,
+                        target_offset_ms=target_offsets.get(t_id) if t_id else None,
+                        status_match=True,
+                        baseline_status=None,
+                        target_status=pair.target.get("status_code"),
+                        structure_match=True,
+                        diff_summary="",
+                        value_match=True,
+                        value_diff="",
+                        **_always_kwargs(pair.target, "target"),
+                        **_detail_kwargs(pair.target, "target"),
                     )
         elif base_s:
-            # Scenario only in baseline — all endpoints removed
+            # Scenario only in baseline — every endpoint becomes a baseline-only row
+            from scout.matcher.normalize import normalize_url
             for rec in base_rdb.get_api_records(base_s["id"]):
-                from scout.matcher.normalize import normalize_url
-                ddb.insert_missing_endpoint(
+                b_id = rec.get("id")
+                ddb.insert_endpoint_diff(
                     scenario=scenario_name,
-                    side="baseline",
-                    record_id=rec.get("id", 0),
+                    baseline_record_id=b_id,
+                    target_record_id=None,
                     method=rec["method"],
                     path=normalize_url(rec["url"]),
-                    status_code=rec.get("status_code"),
+                    step_seq=rec.get("step_seq"),
+                    step_label=None,
+                    baseline_offset_ms=None,
+                    target_offset_ms=None,
+                    status_match=True,
+                    baseline_status=rec.get("status_code"),
+                    target_status=None,
+                    structure_match=True,
+                    diff_summary="",
+                    value_match=True,
+                    value_diff="",
+                    **_always_kwargs(rec, "baseline"),
+                    **_detail_kwargs(rec, "baseline"),
                 )
         else:
-            # Scenario only in target — all endpoints added
+            # Scenario only in target — every endpoint becomes a target-only row
+            from scout.matcher.normalize import normalize_url
             for rec in target_rdb.get_api_records(target_s["id"]):
-                from scout.matcher.normalize import normalize_url
-                ddb.insert_missing_endpoint(
+                t_id = rec.get("id")
+                ddb.insert_endpoint_diff(
                     scenario=scenario_name,
-                    side="target",
-                    record_id=rec.get("id", 0),
+                    baseline_record_id=None,
+                    target_record_id=t_id,
                     method=rec["method"],
                     path=normalize_url(rec["url"]),
-                    status_code=rec.get("status_code"),
+                    step_seq=rec.get("step_seq"),
+                    step_label=None,
+                    baseline_offset_ms=None,
+                    target_offset_ms=None,
+                    status_match=True,
+                    baseline_status=None,
+                    target_status=rec.get("status_code"),
+                    structure_match=True,
+                    diff_summary="",
+                    value_match=True,
+                    value_diff="",
+                    **_always_kwargs(rec, "target"),
+                    **_detail_kwargs(rec, "target"),
                 )
 
     base_rdb.close()
@@ -636,7 +696,6 @@ def diff(baseline: str, target: str, detail: bool) -> None:
     # Generate report
     meta = ddb.get_meta()
     diffs = ddb.get_endpoint_diffs()
-    missing = ddb.get_missing_endpoints()
     summary = ddb.summary()
     ddb.close()
 
@@ -644,7 +703,7 @@ def diff(baseline: str, target: str, detail: bool) -> None:
     import json as _json
     di_path = repo_root / "diff_ignore.json"
     di_raw = _json.loads(di_path.read_text(encoding="utf-8")) if di_path.exists() else {}
-    generate_diff_html(meta, diffs, missing, summary, diff_dir / "report.html",
+    generate_diff_html(meta, diffs, summary, diff_dir / "report.html",
                        diff_ignore=di_raw, repo_root=repo_root)
 
     # Print summary

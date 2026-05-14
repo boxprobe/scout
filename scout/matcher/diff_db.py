@@ -196,17 +196,25 @@ class DiffDB:
         return [dict(r) for r in rows]
 
     def summary(self) -> dict[str, int]:
-        paired = self._conn.execute("SELECT COUNT(*) FROM endpoint_diffs").fetchone()[0]
+        # Missing endpoints now live in endpoint_diffs with one side's record_id
+        # NULL. Exclude these from status/structure/value mismatch counts so
+        # they don't double-count: they're "endpoint changes", not body diffs.
+        paired_where = "baseline_record_id IS NOT NULL AND target_record_id IS NOT NULL"
+        paired = self._conn.execute(
+            f"SELECT COUNT(*) FROM endpoint_diffs WHERE {paired_where}"
+        ).fetchone()[0]
         status_mm = self._conn.execute(
-            "SELECT COUNT(*) FROM endpoint_diffs WHERE status_match = 0"
+            f"SELECT COUNT(*) FROM endpoint_diffs WHERE status_match = 0 AND {paired_where}"
         ).fetchone()[0]
         struct_mm = self._conn.execute(
-            "SELECT COUNT(*) FROM endpoint_diffs WHERE structure_match = 0"
+            f"SELECT COUNT(*) FROM endpoint_diffs WHERE structure_match = 0 AND {paired_where}"
         ).fetchone()[0]
         value_mm = self._conn.execute(
-            "SELECT COUNT(*) FROM endpoint_diffs WHERE value_match = 0"
+            f"SELECT COUNT(*) FROM endpoint_diffs WHERE value_match = 0 AND {paired_where}"
         ).fetchone()[0]
-        missing = self._conn.execute("SELECT COUNT(*) FROM missing_endpoints").fetchone()[0]
+        missing = self._conn.execute(
+            "SELECT COUNT(*) FROM endpoint_diffs WHERE baseline_record_id IS NULL OR target_record_id IS NULL"
+        ).fetchone()[0]
         base_4xx = self._conn.execute(
             "SELECT COUNT(*) FROM endpoint_diffs WHERE baseline_status >= 400 AND baseline_status < 500"
         ).fetchone()[0]

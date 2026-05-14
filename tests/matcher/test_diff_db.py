@@ -57,6 +57,7 @@ def test_set_and_get_meta(db: DiffDB) -> None:
 
 
 def test_summary(db: DiffDB) -> None:
+    # Two paired rows: one with a value diff, one with status + structure diff.
     db.insert_endpoint_diff(
         baseline_record_id=1, target_record_id=2,
         method="GET", path="/a",
@@ -70,9 +71,16 @@ def test_summary(db: DiffDB) -> None:
         status_match=False, baseline_status=200, target_status=500,
         structure_match=False, diff_summary="key removed",
     )
-    db.insert_missing_endpoint(side="target", record_id=5, method="POST", path="/c", status_code=201)
+    # A "missing endpoint" row: target side present, baseline NULL — counts as
+    # an endpoint change, NOT as a status/structure/value mismatch.
+    db.insert_endpoint_diff(
+        baseline_record_id=None, target_record_id=5,
+        method="POST", path="/c",
+        status_match=True, baseline_status=None, target_status=201,
+        structure_match=True, diff_summary="",
+    )
     s = db.summary()
-    assert s["total_paired"] == 2
+    assert s["total_paired"] == 2  # one-sided rows excluded
     assert s["status_mismatches"] == 1
     assert s["structure_mismatches"] == 1
     assert s["value_mismatches"] == 1

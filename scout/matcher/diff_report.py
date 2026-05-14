@@ -42,7 +42,6 @@ def _format_body(body: str | None) -> str:
 def generate_diff_html(
     meta: dict[str, str],
     diffs: list[dict[str, Any]],
-    missing: list[dict[str, Any]],
     summary: dict[str, int],
     output_path: Path,
     *,
@@ -69,14 +68,30 @@ def generate_diff_html(
         row_step_seq = d.get("step_seq")
         val_match = d.get("value_match", 1)
 
+        # Detect "missing endpoint" rows: one side has no record. These render
+        # differently (added/removed badge, dashes in structure/value) and are
+        # filterable via the "endpoint" type — unified with the paired-diff
+        # table instead of living in a separate Endpoint Changes table.
+        baseline_missing = d.get("baseline_record_id") is None
+        target_missing = d.get("target_record_id") is None
+        is_missing = baseline_missing or target_missing
+
         # Render the raw comparison result. SO-suppression is applied in JS at view time
         # so popup toggles update the row immediately without a re-run.
-        status_icon = "✓" if d["status_match"] else "✗"
-        status_color = "#4ade80" if d["status_match"] else "#ef4444"
-        struct_icon = "✓" if d["structure_match"] else "✗"
-        struct_color = "#4ade80" if d["structure_match"] else "#ef4444"
-        val_icon = "✓" if val_match else "✗"
-        val_color = "#4ade80" if val_match else "#f59e0b"
+        if is_missing:
+            status_icon = "+" if baseline_missing else "−"
+            status_color = "#facc15" if baseline_missing else "#ef4444"
+            struct_icon = "—"
+            struct_color = "#666"
+            val_icon = "—"
+            val_color = "#666"
+        else:
+            status_icon = "✓" if d["status_match"] else "✗"
+            status_color = "#4ade80" if d["status_match"] else "#ef4444"
+            struct_icon = "✓" if d["structure_match"] else "✗"
+            struct_color = "#4ade80" if d["structure_match"] else "#ef4444"
+            val_icon = "✓" if val_match else "✗"
+            val_color = "#4ade80" if val_match else "#f59e0b"
         detail = d.get("diff_summary", "") or ""
         val_diff = d.get("value_diff", "") or ""
 
@@ -125,19 +140,24 @@ def generate_diff_html(
             "header_diff": d.get("header_diff") or "",
         }
         if has_detail:
+            # Pass None through (not "") so the popup can distinguish a side
+            # that has no record at all (NULL in DB → None in dict) from a
+            # side that has a record but an empty body. The popup's gate
+            # condition checks `!== null && !== undefined` to decide whether
+            # to render that side's panel or show "(no record on this side)".
             popup_entry.update({
-                "baseline_url": d.get("baseline_url") or "",
-                "target_url": d.get("target_url") or "",
-                "baseline_request": d.get("baseline_request") or "",
-                "baseline_response": d.get("baseline_response") or "",
-                "baseline_request_headers": d.get("baseline_request_headers") or "",
-                "baseline_response_headers": d.get("baseline_response_headers") or "",
-                "target_request": d.get("target_request") or "",
-                "target_response": d.get("target_response") or "",
-                "target_request_headers": d.get("target_request_headers") or "",
-                "target_response_headers": d.get("target_response_headers") or "",
-                "baseline_timestamp": d.get("baseline_timestamp") or "",
-                "target_timestamp": d.get("target_timestamp") or "",
+                "baseline_url": d.get("baseline_url"),
+                "target_url": d.get("target_url"),
+                "baseline_request": d.get("baseline_request"),
+                "baseline_response": d.get("baseline_response"),
+                "baseline_request_headers": d.get("baseline_request_headers"),
+                "baseline_response_headers": d.get("baseline_response_headers"),
+                "target_request": d.get("target_request"),
+                "target_response": d.get("target_response"),
+                "target_request_headers": d.get("target_request_headers"),
+                "target_response_headers": d.get("target_response_headers"),
+                "baseline_timestamp": d.get("baseline_timestamp"),
+                "target_timestamp": d.get("target_timestamp"),
                 "baseline_duration": d.get("baseline_duration"),
                 "target_duration": d.get("target_duration"),
             })
@@ -158,12 +178,17 @@ def generate_diff_html(
         )
 
         row_types = []
-        if not d["status_match"]:
-            row_types.append("status")
-        if not d["structure_match"]:
-            row_types.append("structure")
-        if not val_match:
-            row_types.append("value")
+        if is_missing:
+            # Missing rows go through their own filter type so the existing
+            # "Endpoint Changes" badge still narrows to exactly these rows.
+            row_types.append("endpoint")
+        else:
+            if not d["status_match"]:
+                row_types.append("status")
+            if not d["structure_match"]:
+                row_types.append("structure")
+            if not val_match:
+                row_types.append("value")
         data_diff_types = " ".join(row_types) if row_types else "clean"
 
         # Δms (target - baseline duration) — perf regression signal per call
@@ -185,6 +210,21 @@ def generate_diff_html(
             delta_display = "—"
             data_delta = ""
 
+        # Status cell: for paired rows, show "200" or "200→304". For missing
+        # rows, show "—→200" (added in target) or "200→—" (removed in baseline)
+        # with an Added/Removed prefix icon.
+        if is_missing:
+            b_disp = "—" if baseline_missing else str(d.get("baseline_status") or "")
+            t_disp = "—" if target_missing else str(d.get("target_status") or "")
+            status_cell_html = (
+                f'<td style="color:{status_color}">{status_icon} {b_disp}→{t_disp}</td>'
+            )
+        else:
+            arrow = ("→" + str(d.get("target_status", ""))) if not d["status_match"] else ""
+            status_cell_html = (
+                f'<td style="color:{status_color}">{status_icon} {d.get("baseline_status", "")}{arrow}</td>'
+            )
+
         row = (
             f'<tr class="diff-row" data-method="{d["method"]}" data-path="{_esc(d["path"].lower())}"'
             f' data-scenario="{_esc(_display_scenario(row_scenario).lower())}" data-status="{b_status} {t_status}"'
@@ -202,8 +242,7 @@ def generate_diff_html(
             f'<td class="cell-delta {delta_class}">{delta_display}</td>'
             f'<td>{d["method"]}</td>'
             f'{path_cell_html}'
-            f'<td style="color:{status_color}">{status_icon} {d.get("baseline_status", "")}'
-            f'{"→" + str(d.get("target_status", "")) if not d["status_match"] else ""}</td>'
+            f'{status_cell_html}'
             f'<td class="cell-structure" style="color:{struct_color}">{struct_icon}</td>'
             f'<td class="cell-value" style="color:{val_color}">{val_icon}</td>'
             f'{detail_cell}'
@@ -212,20 +251,9 @@ def generate_diff_html(
 
         diff_rows.append(row)
 
-    missing_rows = []
-    for mi, m in enumerate(missing):
-        side_label = "Added" if m["side"] == "target" else "Removed"
-        side_color = "#facc15" if m["side"] == "target" else "#ef4444"
-        missing_rows.append(
-            f'<tr>'
-            f'<td style="color:#666">{mi + 1}</td>'
-            f'<td style="font-size:12px;color:#a5b4fc;">{_display_scenario(m.get("scenario", ""))}</td>'
-            f'<td style="color:{side_color}">{side_label}</td>'
-            f'<td>{m["method"]}</td>'
-            f'<td class="cell-path">{_esc(m["path"])}</td>'
-            f'<td>{m.get("status_code", "")}</td>'
-            f'</tr>'
-        )
+    # Missing endpoints (one-sided records) are now rendered as rows in the
+    # main diff_rows table with data-diff-types="endpoint". The legacy
+    # separate "Endpoint Changes" table has been removed.
 
     has_issues = summary["status_mismatches"] + summary["structure_mismatches"] + summary["missing_endpoints"] > 0
     value_changes = summary.get("value_mismatches", 0)
@@ -1108,10 +1136,9 @@ function applySort() {{
   <table>
   <thead><tr><th>#</th><th>Scenario</th><th>Step</th><th>ms</th><th title="target_duration - baseline_duration">Δms</th><th>Method</th><th>Path</th><th>Status</th><th>Structure</th><th>Value</th><th>Details</th></tr></thead>
   <tbody>
-  {"".join(diff_rows) if diff_rows else '<tr><td colspan="11" style="color:#888">No paired endpoints</td></tr>'}
+  {"".join(diff_rows) if diff_rows else '<tr><td colspan="11" style="color:#888">No endpoints recorded</td></tr>'}
   </tbody>
   </table>
-  {"<h2>Endpoint Changes</h2>" + chr(10) + '<table>' + chr(10) + '<thead><tr><th>#</th><th>Scenario</th><th>Change</th><th>Method</th><th>Path</th><th>Status</th></tr></thead>' + chr(10) + '<tbody>' + chr(10) + "".join(missing_rows) + chr(10) + '</tbody>' + chr(10) + '</table>' if missing_rows else ""}
 </section>
 
 <section class="tab-pane" id="tab-config" role="tabpanel">
