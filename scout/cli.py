@@ -359,7 +359,7 @@ def analyze() -> None:
 @main.command()
 @click.argument("baseline", required=True)
 @click.argument("target", required=True)
-@click.option("--detail/--no-detail", default=False, help="Include raw request/response data in diff.")
+@click.option("--detail/--no-detail", default=True, help="Include raw request/response data in diff (default: enabled, needed for popup body display).")
 def diff(baseline: str, target: str, detail: bool) -> None:
     """Compare API recordings between two runs."""
     from urllib.parse import urlparse

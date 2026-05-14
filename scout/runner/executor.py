@@ -77,6 +77,21 @@ async def _run_scenario_with_browser(
     if extra_http_headers:
         ctx_kwargs["extra_http_headers"] = extra_http_headers
     context = await browser.new_context(**ctx_kwargs)
+
+    # Strip HTTP cache validators on every outgoing request. With them, the
+    # browser sends If-None-Match / If-Modified-Since after the first response
+    # in a scenario, and the server replies 304 with no body — producing
+    # nondeterministic 200/304 mixes in the diff (a refetch arriving slightly
+    # later in one run hits cache, slightly earlier in the other doesn't).
+    # We always want fresh response bodies so diff compares actual content.
+    async def _strip_cache_validators(route: Any, request: Any) -> None:
+        headers = dict(request.headers)
+        headers.pop("if-none-match", None)
+        headers.pop("if-modified-since", None)
+        await route.continue_(headers=headers)
+
+    await context.route("**/*", _strip_cache_validators)
+
     pw_page = await context.new_page()
     page = Page(
         pw_page,

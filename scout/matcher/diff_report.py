@@ -882,31 +882,50 @@ function openPopup(idx) {{
        + 'data-step-seq="' + esc(String(soStepSeq)) + '" '
        + 'onclick="toggleSO(this)" title="' + soTitle + '">'
        + (soActive ? '\\u2713 status_only' : 'Mark as status_only') + '</button></div>';
-  // Detail panels (Baseline / Target tabs)
-  if (d.baseline_url !== undefined) {{
+  // Detail panels (Baseline / Target tabs). Render whenever *either* side has
+  // detail — otherwise rows where only one side has a record (e.g. added or
+  // removed endpoints) would show no body at all.
+  var hasBaselineDetail = d.baseline_url !== undefined && d.baseline_url !== null;
+  var hasTargetDetail = d.target_url !== undefined && d.target_url !== null;
+  if (hasBaselineDetail || hasTargetDetail) {{
     var bDur = d.baseline_duration != null ? d.baseline_duration + 'ms' : '';
     var tDur = d.target_duration != null ? d.target_duration + 'ms' : '';
     html += '<div class="popup-section">Request / Response</div>';
     html += '<div class="popup-detail-tabs" role="tablist">';
-    html += '<button class="popup-tab-btn active" role="tab" onclick="switchPopupDetail(this, \\'baseline\\')">Baseline</button>';
-    html += '<button class="popup-tab-btn" role="tab" onclick="switchPopupDetail(this, \\'target\\')">Target</button>';
+    // Default the active tab to the side that has data
+    var activeBaseline = hasBaselineDetail;
+    html += '<button class="popup-tab-btn' + (activeBaseline ? ' active' : '') + '" role="tab" onclick="switchPopupDetail(this, \\'baseline\\')">Baseline' + (hasBaselineDetail ? '' : ' (no record)') + '</button>';
+    html += '<button class="popup-tab-btn' + (activeBaseline ? '' : ' active') + '" role="tab" onclick="switchPopupDetail(this, \\'target\\')">Target' + (hasTargetDetail ? '' : ' (no record)') + '</button>';
     html += '</div>';
-    html += '<div class="popup-detail-pane active" data-side="baseline" role="tabpanel">';
-    html += '<div class="popup-meta">' + esc(d.baseline_timestamp) + (bDur ? '&nbsp;&nbsp;' + bDur : '') + '</div>';
-    html += '<div class="popup-url">' + esc(d.baseline_url) + '</div>';
-    html += '<div class="popup-label">Request Headers</div><pre class="popup-body">' + formatJson(d.baseline_request_headers) + '</pre>';
-    html += '<div class="popup-label">Request</div><pre class="popup-body">' + formatJson(d.baseline_request) + '</pre>';
-    html += '<div class="popup-label">Response Headers</div><pre class="popup-body">' + formatJson(d.baseline_response_headers) + '</pre>';
-    html += '<div class="popup-label">Response</div><pre class="popup-body">' + formatJson(d.baseline_response) + '</pre>';
-    html += '</div>';
-    html += '<div class="popup-detail-pane" data-side="target" role="tabpanel">';
-    html += '<div class="popup-meta">' + esc(d.target_timestamp) + (tDur ? '&nbsp;&nbsp;' + tDur : '') + '</div>';
-    html += '<div class="popup-url">' + esc(d.target_url) + '</div>';
-    html += '<div class="popup-label">Request Headers</div><pre class="popup-body">' + formatJson(d.target_request_headers) + '</pre>';
-    html += '<div class="popup-label">Request</div><pre class="popup-body">' + formatJson(d.target_request) + '</pre>';
-    html += '<div class="popup-label">Response Headers</div><pre class="popup-body">' + formatJson(d.target_response_headers) + '</pre>';
-    html += '<div class="popup-label">Response</div><pre class="popup-body">' + formatJson(d.target_response) + '</pre>';
-    html += '</div>';
+
+    // Render a side. When the side has no record at all, show a placeholder.
+    // When it has a record but the response body is empty (304 / 204 / some
+    // 4xx-5xx), the existing formatJson "<em>empty</em>" already covers it.
+    function renderSide(side, hasDetail) {{
+      var paneCls = 'popup-detail-pane' + (
+        (side === 'baseline' && activeBaseline) || (side === 'target' && !activeBaseline)
+          ? ' active' : ''
+      );
+      var html = '<div class="' + paneCls + '" data-side="' + side + '" role="tabpanel">';
+      if (!hasDetail) {{
+        var otherSide = side === 'baseline' ? 'Target' : 'Baseline';
+        html += '<div class="popup-meta" style="color:#a3a3a3">(no record on this side — only ' + otherSide + ' fired this call)</div>';
+        html += '</div>';
+        return html;
+      }}
+      var dur = d[side + '_duration'] != null ? d[side + '_duration'] + 'ms' : '';
+      html += '<div class="popup-meta">' + esc(d[side + '_timestamp'] || '') + (dur ? '&nbsp;&nbsp;' + dur : '') + '</div>';
+      html += '<div class="popup-url">' + esc(d[side + '_url'] || '') + '</div>';
+      html += '<div class="popup-label">Request Headers</div><pre class="popup-body">' + formatJson(d[side + '_request_headers']) + '</pre>';
+      html += '<div class="popup-label">Request</div><pre class="popup-body">' + formatJson(d[side + '_request']) + '</pre>';
+      html += '<div class="popup-label">Response Headers</div><pre class="popup-body">' + formatJson(d[side + '_response_headers']) + '</pre>';
+      html += '<div class="popup-label">Response</div><pre class="popup-body">' + formatJson(d[side + '_response']) + '</pre>';
+      html += '</div>';
+      return html;
+    }}
+
+    html += renderSide('baseline', hasBaselineDetail);
+    html += renderSide('target', hasTargetDetail);
   }}
   content.innerHTML = html;
   el.classList.add('open');
