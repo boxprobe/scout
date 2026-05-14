@@ -1,6 +1,12 @@
 """Tests for matcher/normalize.py — URL path normalization."""
 
-from scout.matcher.normalize import extract_dynamic_pairs, normalize_query, normalize_url, paths_match
+from scout.matcher.normalize import (
+    extract_dynamic_pairs,
+    extract_query_dynamic_pairs,
+    normalize_url,
+    paths_match,
+    query_key_set,
+)
 
 
 def test_strip_query_params() -> None:
@@ -96,55 +102,72 @@ def test_extract_dynamic_pairs_pure_int() -> None:
     assert extract_dynamic_pairs("/users/123", "/users/456") == [("123", "456")]
 
 
-# -- normalize_query ----------------------------------------------------------
+# -- query_key_set + extract_query_dynamic_pairs ------------------------------
 
 
-def test_normalize_query_empty() -> None:
-    assert normalize_query("") == ""
+def test_query_key_set_empty() -> None:
+    assert query_key_set("") == ()
 
 
-def test_normalize_query_prefixed_id_masked() -> None:
-    """Prefixed IDs (apk_..., region_..., etc.) → masked."""
-    a = normalize_query("limit=10&offset=0&publishable_key_id=apk_01KRJQZKQXYQ6VZZP0F8738Y8S")
-    b = normalize_query("limit=10&offset=0&publishable_key_id=apk_01KRJR6BPMZSWTBVA0VQT0VV25")
+def test_query_key_set_sorted_canonical() -> None:
+    """Same keys in different order produce the same set."""
+    assert query_key_set("limit=10&offset=0") == query_key_set("offset=0&limit=10")
+
+
+def test_query_key_set_values_irrelevant() -> None:
+    """Whether values differ or look like IDs doesn't matter — only key names do.
+
+    Two requests with the same key set are the same logical API; value
+    differences are surfaced later by body comparison.
+    """
+    a = query_key_set("limit=10&offset=0&publishable_key_id=apk_01KRJQZKQXYQ6VZZP0F8738Y8S")
+    b = query_key_set("limit=10&offset=0&publishable_key_id=apk_01KRJR6BPMZSWTBVA0VQT0VV25")
     assert a == b
-    assert "publishable_key_id=*" in a
 
 
-def test_normalize_query_non_dynamic_values_preserved() -> None:
-    """Short integers and enums must survive normalization."""
-    assert normalize_query("limit=10") == "limit=10"
-    assert normalize_query("type=publishable") == "type=publishable"
-    assert normalize_query("offset=0") == "offset=0"
-
-
-def test_normalize_query_different_limit_not_same() -> None:
-    """limit=10 and limit=20 are different APIs in a paginated list."""
-    assert normalize_query("limit=10") != normalize_query("limit=20")
-
-
-def test_normalize_query_extra_key_not_same() -> None:
-    """Adding a new query key changes the API identity."""
-    a = normalize_query("limit=10&offset=0&publishable_key_id=apk_ABCDEFGHIJ")
-    b = normalize_query("limit=10&offset=0&publishable_key_id=apk_ABCDEFGHIJ&extra=foo")
+def test_query_key_set_extra_key_differs() -> None:
+    """Adding a query key is a real API identity change."""
+    a = query_key_set("limit=10&offset=0&publishable_key_id=apk_AAA")
+    b = query_key_set("limit=10&offset=0&publishable_key_id=apk_AAA&extra=foo")
     assert a != b
 
 
-def test_normalize_query_uuid_masked() -> None:
-    a = normalize_query("user=f47ac10b-58cc-4372-a567-0e02b2c3d479")
-    b = normalize_query("user=12345678-90ab-4cde-9012-3456789abcde")
-    assert a == b == "user=*"
+def test_query_key_set_short_value_still_grouped() -> None:
+    """Short string values (e.g. q=test-1a64e3) get the same treatment as long IDs.
 
-
-def test_normalize_query_sorted_canonical() -> None:
-    """Different key order normalizes to the same canonical string."""
-    a = normalize_query("limit=10&offset=0")
-    b = normalize_query("offset=0&limit=10")
+    Regression for the bug where a regex-based heuristic missed short
+    prefix-style IDs and split otherwise-identical URLs into separate APIs.
+    """
+    a = query_key_set("limit=20&offset=0&q=test-1a64e3&type=publishable")
+    b = query_key_set("limit=20&offset=0&q=test-726260&type=publishable")
     assert a == b
 
 
-def test_normalize_query_long_digit_string_masked() -> None:
-    """8+ digit numbers (timestamps, big ids) treated as dynamic."""
-    a = normalize_query("created_at=1716800000")
-    b = normalize_query("created_at=1716900000")
-    assert a == b
+def test_extract_query_dynamic_pairs_value_diff() -> None:
+    """For shared keys with differing values, return (value_a, value_b)."""
+    pairs = extract_query_dynamic_pairs(
+        "limit=10&q=test-1a64e3&type=publishable",
+        "limit=10&q=test-726260&type=publishable",
+    )
+    assert pairs == [("test-1a64e3", "test-726260")]
+
+
+def test_extract_query_dynamic_pairs_identical_no_pair() -> None:
+    pairs = extract_query_dynamic_pairs("limit=10&offset=0", "limit=10&offset=0")
+    assert pairs == []
+
+
+def test_extract_query_dynamic_pairs_unmatched_keys_ignored() -> None:
+    """Keys only present on one side are not extracted — alignment handles those."""
+    pairs = extract_query_dynamic_pairs("limit=10&extra=foo", "limit=20")
+    # limit differs (extracted); extra exists only on baseline (ignored here)
+    assert pairs == [("10", "20")]
+
+
+def test_extract_query_dynamic_pairs_multiple() -> None:
+    pairs = extract_query_dynamic_pairs(
+        "q=test-A&publishable_key_id=apk_AAA&fields=id",
+        "q=test-B&publishable_key_id=apk_BBB&fields=id",
+    )
+    # Keys are processed in sorted order
+    assert pairs == [("apk_AAA", "apk_BBB"), ("test-A", "test-B")]

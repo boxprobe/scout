@@ -65,50 +65,62 @@ def paths_match(path_a: str, path_b: str) -> bool:
     return literal_match > 0 or len(segs_a) == 0
 
 
-_DYN_VALUE_RE = re.compile(
-    r"""
-    ^[0-9a-f]{8}-[0-9a-f]{4}-       # UUID (full or prefix)
-    | ^[a-z]+_[a-zA-Z0-9_-]{8,}$    # prefixed id: apk_01KRJQZKQ..., region_03ABCDEFGH
-    | ^[a-fA-F0-9]{16,}$             # long hex string (token, hash digest)
-    | ^[0-9]{8,}$                    # 8+ digit number (timestamp, big id)
-    """,
-    re.VERBOSE,
-)
+def _parse_qs(query: str) -> dict[str, str]:
+    """Parse a query string into a {key: value} dict (last value wins on dupes).
 
-
-def _looks_like_dynamic_value(value: str) -> bool:
-    """Return True if a query string value looks like a per-run-unique ID.
-
-    Intentionally NARROWER than _is_id_segment used for path matching:
-    short integers (limit=10) and short alphanumerics (type=publishable)
-    are real parameters whose values must match exactly across runs.
+    Intentionally NOT using urllib.parse.parse_qs — we want to preserve the
+    raw encoded form so byte-for-byte comparison stays predictable, and we
+    don't want list-valued keys here (downstream pairing extracts diffs
+    string-by-string).
     """
-    if not value or len(value) < 4:
-        return False
-    return bool(_DYN_VALUE_RE.search(value))
-
-
-def normalize_query(query: str) -> str:
-    """Canonicalize a query string for endpoint alignment.
-
-    Sorts keys for stable ordering and replaces each dynamic-looking value
-    with ``*`` so URLs that differ only in run-unique IDs end up in the
-    same alignment group. Two URLs with structurally identical keys and
-    the same non-dynamic values normalize to the same string.
-    """
+    out: dict[str, str] = {}
     if not query:
-        return ""
-    pairs: list[tuple[str, str]] = []
+        return out
     for kv in query.split("&"):
+        if not kv:
+            continue
         if "=" in kv:
             k, v = kv.split("=", 1)
         else:
             k, v = kv, ""
-        if _looks_like_dynamic_value(v):
-            v = "*"
-        pairs.append((k, v))
-    pairs.sort()
-    return "&".join(f"{k}={v}" for k, v in pairs)
+        out[k] = v
+    return out
+
+
+def query_key_set(query: str) -> tuple[str, ...]:
+    """Sorted tuple of query parameter KEYS, ignoring values.
+
+    Two URLs that share the same path and the same query key set are taken
+    to be the same logical API call — differences in values (whether truly
+    dynamic IDs or real param values) are reported as content diffs after
+    pairing, not as separate endpoints. Adding or removing a query key is
+    what constitutes a distinct API.
+    """
+    return tuple(sorted(_parse_qs(query).keys()))
+
+
+def extract_query_dynamic_pairs(query_a: str, query_b: str) -> list[tuple[str, str]]:
+    """Return (value_a, value_b) for each query key whose values differ.
+
+    Caller is responsible for verifying that ``query_a`` and ``query_b``
+    share the same key set (typically by way of alignment grouping on
+    :func:`query_key_set`). Keys that exist on only one side are ignored —
+    those alignment cases are already represented as one-sided endpoint
+    records. Identical values are skipped.
+
+    The returned list is suitable for feeding into the same path-derived
+    dynamic-pair substitution used to normalize bodies before comparison
+    (see ``cli._normalize_dynamic_ids``). This lets a logical-but-
+    differently-keyed pair such as ``?q=test-1a64e3`` vs
+    ``?q=test-726260`` compare cleanly without per-app regex tuning.
+    """
+    da = _parse_qs(query_a)
+    db = _parse_qs(query_b)
+    pairs: list[tuple[str, str]] = []
+    for k in sorted(set(da.keys()) & set(db.keys())):
+        if da[k] != db[k]:
+            pairs.append((da[k], db[k]))
+    return pairs
 
 
 def extract_dynamic_pairs(path_a: str, path_b: str) -> list[tuple[str, str]]:

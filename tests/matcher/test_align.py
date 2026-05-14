@@ -110,6 +110,21 @@ def test_same_query_different_id_in_path_still_pairs() -> None:
     assert len(paired) == 1
 
 
+def test_short_dynamic_value_in_query_still_pairs() -> None:
+    """Short dynamic-like values (e.g. q=test-1a64e3) must still pair.
+
+    Regression for the bug where a value-shape regex missed short
+    prefix-style identifiers and split otherwise-identical URLs into two
+    different APIs. Structural matching on query KEYS only — values get
+    compared later as content, not as identity — fixes this.
+    """
+    base = [_rec("GET", "http://h/admin/api-keys?limit=20&offset=0&q=test-1a64e3&type=publishable&fields=id,title")]
+    target = [_rec("GET", "http://h/admin/api-keys?limit=20&offset=0&q=test-726260&type=publishable&fields=id,title")]
+    result = align_records(base, target)
+    paired = [p for p in result if p.baseline and p.target]
+    assert len(paired) == 1
+
+
 def test_dynamic_id_in_query_value_still_pairs() -> None:
     """Query strings whose only difference is a dynamic ID value must pair.
 

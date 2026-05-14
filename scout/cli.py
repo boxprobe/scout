@@ -370,7 +370,7 @@ def diff(baseline: str, target: str, detail: bool) -> None:
     from scout.matcher.compare import compare_pair
     from scout.matcher.diff_db import DiffDB
     from scout.matcher.diff_report import generate_diff_html
-    from scout.matcher.normalize import extract_dynamic_pairs
+    from scout.matcher.normalize import extract_dynamic_pairs, extract_query_dynamic_pairs
 
     repo_root = Path.cwd()
     scout_dir = repo_root / ".scout"
@@ -544,12 +544,20 @@ def diff(baseline: str, target: str, detail: bool) -> None:
                         continue
 
                     ignore_rule = diff_ignore_cfg.rule_for(pair.method, pair.path)
-                    # Replace path-derived dynamic IDs with stable placeholders before
-                    # comparing — eliminates noise from per-run-unique IDs leaking from
-                    # the URL into request/response bodies.
-                    dyn_pairs = extract_dynamic_pairs(
-                        urlparse(pair.baseline.get("url") or "").path,
-                        urlparse(pair.target.get("url") or "").path,
+                    # Replace dynamic URL components with stable placeholders before
+                    # comparing — eliminates noise from per-run-unique IDs leaking
+                    # from the URL into request/response bodies. We extract from
+                    # both path segments (e.g. /orders/ord_A vs /orders/ord_B) and
+                    # query values (e.g. ?q=test-1a64e3 vs ?q=test-726260). Pairs
+                    # are detected by *comparing the two records*, not by guessing
+                    # from value shape — alignment already grouped these together
+                    # on path + query key set, so any value differences within a
+                    # pair are by definition the dynamic parts.
+                    b_parsed = urlparse(pair.baseline.get("url") or "")
+                    t_parsed = urlparse(pair.target.get("url") or "")
+                    dyn_pairs = (
+                        extract_dynamic_pairs(b_parsed.path, t_parsed.path)
+                        + extract_query_dynamic_pairs(b_parsed.query, t_parsed.query)
                     )
                     baseline_for_compare = _normalize_dynamic_ids(pair.baseline, dyn_pairs, "baseline")
                     target_for_compare = _normalize_dynamic_ids(pair.target, dyn_pairs, "target")

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
-from scout.matcher.normalize import normalize_query, paths_match
+from scout.matcher.normalize import paths_match, query_key_set
 
 
 @dataclass
@@ -19,24 +19,31 @@ class AlignedPair:
     path: str
 
 
-def _exact_key(record: dict) -> tuple[str, str, str]:
-    """Grouping key: (method, normalized_path, normalized_query).
+def _exact_key(record: dict) -> tuple[str, str, tuple[str, ...]]:
+    """Grouping key: (method, normalized_path, sorted_query_keys).
 
-    Path is normalized (trailing slash stripped). Query is canonicalized by
-    sorting keys and replacing dynamic-looking values (UUIDs, prefixed IDs
-    like ``apk_…``, long hex/digit strings) with ``*``. So:
+    Path is normalized (trailing slash stripped). Query is reduced to its
+    set of parameter KEYS (sorted, values ignored). Two URLs that share a
+    path structure and a query key set are considered the same logical API
+    call — value differences are surfaced as content diffs after pairing,
+    not as separate endpoints. So:
 
-      ?limit=10&offset=0&publishable_key_id=apk_AAA       ┐
-      ?limit=10&offset=0&publishable_key_id=apk_BBB       ┘ same key
+      ?limit=10&offset=0&publishable_key_id=apk_AAA  ┐ same set
+      ?limit=10&offset=0&publishable_key_id=apk_BBB  ┘ {limit,offset,publishable_key_id}
+      ?q=test-1a64e3&limit=20&fields=…               ┐ same set
+      ?q=test-726260&limit=20&fields=…               ┘ {q,limit,fields}
 
-      ?limit=10&offset=0                          → different key (no key)
-      ?limit=20&offset=0&publishable_key_id=apk_AAA  → different (limit=20)
-      ?limit=10&offset=0&publishable_key_id=apk_AAA&extra=foo  → different
+      ?limit=10&offset=0                             → different set
+      ?limit=10&offset=0&publishable_key_id=…&extra=foo → different (extra key)
+
+    Whether a differing VALUE was a dynamic ID or a real parameter is
+    decided later by content comparison rather than by guessing from the
+    value's shape — no app-specific regex tuning required.
     """
     parsed = urlparse(record["url"])
     path = parsed.path.rstrip("/") or "/"
-    query = normalize_query(parsed.query)
-    return (record["method"], path, query)
+    keys = query_key_set(parsed.query)
+    return (record["method"], path, keys)
 
 
 def align_records(
