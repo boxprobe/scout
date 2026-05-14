@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
-from scout.matcher.normalize import normalize_url, paths_match
+from scout.matcher.normalize import paths_match
 
 
 @dataclass
@@ -17,21 +19,16 @@ class AlignedPair:
     path: str
 
 
-def _key(record: dict) -> tuple[str, str]:
-    """Extract (method, normalized_path) from a record."""
-    return (record["method"], normalize_url(record["url"]))
+def _exact_key(record: dict) -> tuple[str, str, str]:
+    """Grouping key: (method, normalized_path, query_string).
 
-
-def _match(a: dict, b: dict) -> bool:
-    """Check if two records refer to the same endpoint."""
-    if a["method"] != b["method"]:
-        return False
-    return paths_match(normalize_url(a["url"]), normalize_url(b["url"]))
-
-
-def _group_key(record: dict) -> tuple[str, str]:
-    """Grouping key: (method, normalized_path) using paths_match for fuzzy grouping."""
-    return _key(record)
+    Path is normalized (trailing slash stripped). Query string is exact —
+    different query strings represent different logical API calls even when
+    they share the same path (e.g. ?limit=3 vs ?limit=20&offset=0).
+    """
+    parsed = urlparse(record["url"])
+    path = parsed.path.rstrip("/") or "/"
+    return (record["method"], path, parsed.query)
 
 
 def align_records(
@@ -40,49 +37,59 @@ def align_records(
 ) -> list[AlignedPair]:
     """Align two sequences of API records.
 
-    Strategy: group by (method, normalized_path), pair within each group
-    by occurrence order. This handles reordered async API responses correctly.
+    Strategy:
+      1. Group by (method, normalized_path, query_string) — query exact.
+      2. For target records whose key has no exact baseline match, try fuzzy
+         path match (paths_match) with the SAME query string. This handles
+         dynamic ID segments in the path while keeping query distinctions.
+      3. Within each group, pair by occurrence order (timestamp-sorted).
+
+    Why query is part of the key: two requests to the same path with
+    different query strings — e.g. ?limit=3&fields=… and ?limit=20&offset=0
+    — are distinct logical calls (filter-search vs. paginated list). When
+    parallel React-query refetches arrive in slightly different order between
+    runs, sorting by full URL within a path-only group can pair URL_A with
+    URL_B; using query as part of the group key prevents that.
+
     Unmatched baseline records → removed (target=None).
     Unmatched target records → added (baseline=None).
     """
-    from collections import defaultdict
-
-    # Group records by (method, path), preserving order within each group
-    base_groups: dict[tuple[str, str], list[dict]] = defaultdict(list)
-    target_groups: dict[tuple[str, str], list[dict]] = defaultdict(list)
-
-    # For fuzzy matching, we need to resolve target keys against baseline keys
-    base_key_map: dict[tuple[str, str], tuple[str, str]] = {}
+    base_groups: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
+    target_groups: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
 
     for rec in baseline:
-        k = _key(rec)
-        base_groups[k].append(rec)
-        base_key_map[k] = k
+        base_groups[_exact_key(rec)].append(rec)
 
-    def _resolve_key(rec: dict) -> tuple[str, str]:
-        """Find matching baseline key using paths_match, or use own key."""
-        k = _key(rec)
-        if k in base_key_map:
-            return k
-        # Try fuzzy match against known baseline keys
-        method, path = k
-        for bk in base_key_map:
-            if bk[0] == method and paths_match(bk[1], path):
+    base_keys = list(base_groups.keys())
+
+    def _resolve_key(rec: dict) -> tuple[str, str, str]:
+        """Resolve a target record's key against baseline groups.
+
+        Try exact match first. If absent, look for a baseline key with the
+        same method + query string and a path that matches fuzzily (dynamic
+        IDs allowed). Falls back to the record's own key if no match —
+        the record then becomes a target-only "added" entry.
+        """
+        own = _exact_key(rec)
+        if own in base_groups:
+            return own
+        own_method, own_path, own_query = own
+        for bk in base_keys:
+            b_method, b_path, b_query = bk
+            if b_method == own_method and b_query == own_query and paths_match(b_path, own_path):
                 return bk
-        return k
+        return own
 
     for rec in target:
-        k = _resolve_key(rec)
-        target_groups[k].append(rec)
+        target_groups[_resolve_key(rec)].append(rec)
 
-    # Pair within each group by URL similarity (sort by full URL so similar URLs align)
     all_keys = list(dict.fromkeys(list(base_groups.keys()) + list(target_groups.keys())))
     result: list[AlignedPair] = []
 
     for k in all_keys:
-        b_list = sorted(base_groups.get(k, []), key=lambda r: r["url"])
-        t_list = sorted(target_groups.get(k, []), key=lambda r: r["url"])
-        method, path = k
+        method, path, _query = k
+        b_list = sorted(base_groups.get(k, []), key=lambda r: r.get("timestamp") or "")
+        t_list = sorted(target_groups.get(k, []), key=lambda r: r.get("timestamp") or "")
 
         pairs = min(len(b_list), len(t_list))
         for i in range(pairs):

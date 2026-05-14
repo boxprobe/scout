@@ -3,9 +3,9 @@
 from scout.matcher.align import align_records, AlignedPair
 
 
-def _rec(method: str, url: str, status: int = 200) -> dict:
+def _rec(method: str, url: str, status: int = 200, timestamp: str = "") -> dict:
     """Minimal record dict for testing."""
-    return {"method": method, "url": url, "status_code": status, "response_body": None}
+    return {"method": method, "url": url, "status_code": status, "response_body": None, "timestamp": timestamp}
 
 
 def test_identical_sequences() -> None:
@@ -60,3 +60,71 @@ def test_different_methods_no_match() -> None:
 def test_empty_sequences() -> None:
     result = align_records([], [])
     assert result == []
+
+
+def test_same_path_different_query_not_paired() -> None:
+    """Same path with structurally different query strings must not pair.
+
+    Regression for the alignment bug where, after parallel React-query
+    refetches arrived in different order between runs, the path-only group
+    key + URL-string sort would pair ?limit=3&… (a filter-search call) with
+    ?limit=20&offset=0&… (a paginated list call). They are distinct logical
+    calls and should each pair only with the same query on the other side.
+    """
+    base = [
+        _rec("GET", "http://h/admin/api-keys?q=&limit=3&fields=id"),
+        _rec("GET", "http://h/admin/api-keys?limit=20&offset=0&type=publishable"),
+    ]
+    target = [
+        # Target's two parallel refetches arrive in the opposite order
+        _rec("GET", "http://h/admin/api-keys?limit=20&offset=0&type=publishable"),
+        _rec("GET", "http://h/admin/api-keys?q=&limit=3&fields=id"),
+    ]
+    result = align_records(base, target)
+    paired = [p for p in result if p.baseline and p.target]
+    assert len(paired) == 2
+    for p in paired:
+        # Same query string on both sides of every pair
+        assert p.baseline["url"] == p.target["url"]
+
+
+def test_same_path_query_only_on_one_side() -> None:
+    """Different query strings → no pair: one becomes removed, the other added."""
+    base = [_rec("GET", "http://h/admin/api-keys?q=&limit=3")]
+    target = [_rec("GET", "http://h/admin/api-keys?limit=20&offset=0")]
+    result = align_records(base, target)
+    paired = [p for p in result if p.baseline and p.target]
+    removed = [p for p in result if p.target is None]
+    added = [p for p in result if p.baseline is None]
+    assert paired == []
+    assert len(removed) == 1
+    assert len(added) == 1
+
+
+def test_same_query_different_id_in_path_still_pairs() -> None:
+    """Path with dynamic ID + same query → fuzzy path match keeps the pair."""
+    base = [_rec("GET", "http://h/admin/api-keys/apk_A?fields=id,title")]
+    target = [_rec("GET", "http://h/admin/api-keys/apk_B?fields=id,title")]
+    result = align_records(base, target)
+    paired = [p for p in result if p.baseline and p.target]
+    assert len(paired) == 1
+
+
+def test_repeated_same_url_pairs_in_occurrence_order() -> None:
+    """Same URL fired N times → pair by occurrence order (timestamps)."""
+    base = [
+        _rec("GET", "http://h/admin/x?a=1", status=200, timestamp="2026-05-14T00:00:01"),
+        _rec("GET", "http://h/admin/x?a=1", status=304, timestamp="2026-05-14T00:00:02"),
+        _rec("GET", "http://h/admin/x?a=1", status=200, timestamp="2026-05-14T00:00:03"),
+    ]
+    target = [
+        _rec("GET", "http://h/admin/x?a=1", status=200, timestamp="2026-05-14T00:00:01"),
+        _rec("GET", "http://h/admin/x?a=1", status=304, timestamp="2026-05-14T00:00:02"),
+        _rec("GET", "http://h/admin/x?a=1", status=200, timestamp="2026-05-14T00:00:03"),
+    ]
+    result = align_records(base, target)
+    paired = [p for p in result if p.baseline and p.target]
+    assert len(paired) == 3
+    # First-with-first, etc.
+    for p in paired:
+        assert p.baseline["status_code"] == p.target["status_code"]
