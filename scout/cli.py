@@ -61,7 +61,7 @@ def main() -> None:
 @click.option("--out", "out_dir", default=None, type=click.Path(), help="Output directory.")
 @click.option("--web-base-url", default=None, help="Override web_base_url from app.json.")
 @click.option("--api-base-url", default=None, help="Override api_base_url from app.json.")
-@click.option("--web-version", default=None, help="Web app version label (e.g. 2.14.0).")
+@click.option("--web-version", required=True, help="Web app version label (e.g. 2.14.0). Required — used to tag the recording so the diff report header and 'Added in <ver>' known-change buttons can identify which deployed version produced each side.")
 @click.option("--api-version", default=None, help="API version label (defaults to --web-version).")
 @click.option("--web-commit", default=None, help="Web app commit hash.")
 @click.option("--api-commit", default=None, help="API commit hash (defaults to --web-commit).")
