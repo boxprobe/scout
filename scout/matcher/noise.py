@@ -222,12 +222,16 @@ def _known_path_matches(diff_path: str, known_paths: set[str]) -> bool:
 def _path_expr_to_regex(expr: str) -> re.Pattern[str]:
     """Convert a path expression like $.orders[*].created_at to a regex.
 
-    Both [*] (xpath-style) and [] (jsonpath-style) match any array index.
+    The matching tolerates all three array forms — ``[N]`` (concrete index),
+    ``[*]`` (xpath-style wildcard), and ``[]`` (jsonpath-style wildcard /
+    schema notation). They all denote "any array element", so a rule written
+    with ``[*]`` matches a diff line emitted with ``[]`` (which is what
+    ``_json_schema`` produces for array fields).
     """
-    # Escape dots and brackets, then replace wildcards with \d+
     pattern = re.escape(expr)
-    pattern = pattern.replace(r"\[\*\]", r"\[\d+\]")
-    pattern = pattern.replace(r"\[\]", r"\[\d+\]")
+    array_wildcard = r"\[(?:\d+|\*|)\]"
+    pattern = pattern.replace(r"\[\*\]", array_wildcard)
+    pattern = pattern.replace(r"\[\]", array_wildcard)
     return re.compile("^" + pattern + "$")
 
 

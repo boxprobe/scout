@@ -456,6 +456,24 @@ class TestKnownChangeArrayWildcard:
         result = filter_known_changes(diff, kc, "2.14.0", method="GET", api_path="/admin/collections")
         assert result == ""
 
+    def test_rule_with_star_matches_diff_with_empty_brackets(self) -> None:
+        """Rule path ``[*]`` must match the ``[]`` form that _json_schema emits.
+
+        Regression: scout's structure differ emits ``$.collections[].field``
+        for array fields, but users (and the popup's known-change buttons)
+        write rules with ``[*]``. They denote the same thing — any element
+        of the array — and the filter must accept both bracket forms.
+        """
+        from scout.matcher.noise import filter_known_changes, KnownChange
+        kc = (KnownChange(
+            endpoint="GET /admin/collections",
+            path="$.collections[*].external_id",
+            change="added", since="2.14.0",
+        ),)
+        diff = "+ $.collections[].external_id: null"
+        result = filter_known_changes(diff, kc, "2.14.0", method="GET", api_path="/admin/collections")
+        assert result == ""
+
     def test_jsonpath_empty_brackets_also_match(self) -> None:
         """[] (jsonpath shorthand for any index) should be equivalent to [*]."""
         from scout.matcher.noise import filter_known_changes, KnownChange
