@@ -206,13 +206,16 @@ def generate_diff_html(
         popup_data.append(popup_entry)
 
         # Details cell — always clickable so users can open popup to manage rules
-        # even on rule-suppressed rows. Optional diff-badge + JS-populated row-labels
-        # (SO/ADDED/REMOVED) + placeholder dash that JS hides when labels exist.
+        # even on rule-suppressed rows. The badge reflects VALUE diffs only —
+        # structural deltas are surfaced as chips in the Structure column —
+        # so "0 diffs" on a KNOWN-filtered row was just visual noise.
+        # Hide the badge when there are no value diffs to count.
         badge_html = (
             f'<span class="diff-badge">{diff_count} diff{"s" if diff_count != 1 else ""}</span>'
-            if has_diff_content else ''
+            if diff_count > 0 else ''
         )
-        empty_html = '' if has_diff_content else '<span class="row-empty" style="color:#555">—</span>'
+        has_visible_content = bool(badge_html)
+        empty_html = '' if has_visible_content else '<span class="row-empty" style="color:#555">—</span>'
         detail_cell = (
             f'<td class="detail-trigger" onclick="openPopup({idx})">'
             f'{badge_html}<span class="row-labels"></span>{empty_html}'
