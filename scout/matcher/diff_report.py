@@ -1193,6 +1193,7 @@ document.addEventListener('DOMContentLoaded', function() {{
 
     var savedKw = localStorage.getItem('scout-diff-filter-kw');
     if (savedKw) document.getElementById('filter-input').value = savedKw;
+    _updateFilterClear();
 
     var savedField = localStorage.getItem('scout-diff-filter-field');
     if (savedField) document.getElementById('filter-field').value = savedField;
@@ -1218,6 +1219,19 @@ document.addEventListener('DOMContentLoaded', function() {{
   updateRowLabels();
 }});
 function filterRows(q) {{ applyFilters(); }}
+function _updateFilterClear() {{
+  var inp = document.getElementById('filter-input');
+  var btn = document.getElementById('filter-clear');
+  if (inp && btn) btn.style.display = inp.value ? 'block' : 'none';
+}}
+function _clearFilterInput() {{
+  var inp = document.getElementById('filter-input');
+  if (!inp) return;
+  inp.value = '';
+  filterRows('');
+  _updateFilterClear();
+  inp.focus();
+}}
 function applyFilters() {{
   var kw = (document.getElementById('filter-input').value || '').trim();
   var field = document.getElementById('filter-field').value;
@@ -1317,8 +1331,12 @@ function applySort() {{
       <option value="step">Step</option>
       <option value="status">Status</option>
     </select>
-    <input id="filter-input" type="text" placeholder="Filter…" oninput="filterRows(this.value)"
-      style="width:260px;padding:6px 10px;background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:13px;outline:none;">
+    <div style="position:relative;display:inline-block;">
+      <input id="filter-input" type="text" placeholder="Filter…" oninput="filterRows(this.value);_updateFilterClear()"
+        style="width:260px;padding:6px 28px 6px 10px;background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:13px;outline:none;">
+      <button id="filter-clear" type="button" onclick="_clearFilterInput()" title="Clear filter"
+        style="display:none;position:absolute;right:4px;top:50%;transform:translateY(-50%);width:20px;height:20px;padding:0;border:none;background:transparent;color:#888;cursor:pointer;font-size:14px;line-height:1;border-radius:50%;">×</button>
+    </div>
     <select id="sort-mode" onchange="applySort()"
       style="padding:6px 8px;background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:13px;"
       title="Sort by latency delta (target - baseline)">
