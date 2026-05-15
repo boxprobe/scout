@@ -417,6 +417,33 @@ def load_diff_ignore(data: dict[str, Any] | None) -> DiffIgnoreConfig:
                 ),
             ))
 
+    # endpoint_ignore: the user-facing per-endpoint ignore rule type. Each
+    # entry is {"endpoint": "METHOD /path-pattern", "path": "$.json.path"}
+    # and is desugared into the existing overrides machinery so all the
+    # downstream filtering (path matcher, structure & value diff filtering)
+    # comes along for free. The bare endpoint ``"*"`` is shorthand for the
+    # "any method, any path" pattern ``"* /*"``.
+    for ei in data.get("endpoint_ignore", []):
+        endpoint = (ei.get("endpoint") or "").strip()
+        path = (ei.get("path") or "").strip()
+        if not endpoint or not path:
+            continue
+        if endpoint == "*":
+            endpoint = "* /*"
+        elif " " not in endpoint:
+            # Accept bare path patterns by defaulting the method to wildcard
+            endpoint = "* " + endpoint
+        is_path_expr = path.startswith("$") or (
+            path.startswith("!") and path[1:2] == "$"
+        )
+        overrides.append((
+            endpoint,
+            IgnoreRule(
+                paths=(path,) if is_path_expr else (),
+                fields=() if is_path_expr else (path,),
+            ),
+        ))
+
     from scout.matcher.normalize import _is_id_segment
 
     def _split_endpoint(endpoint: str) -> tuple[str, str]:

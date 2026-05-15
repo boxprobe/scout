@@ -232,6 +232,41 @@ class TestLoadDiffIgnore:
         assert len(cfg.overrides) == 1
         assert cfg.overrides[0][0] == "GET /admin/orders/*"
 
+    def test_endpoint_ignore_desugars_to_override(self):
+        """endpoint_ignore entries become overrides with a single path."""
+        cfg = load_diff_ignore({
+            "endpoint_ignore": [
+                {"endpoint": "GET /admin/collections", "path": "$.count"},
+                {"endpoint": "*", "path": "$..updated_at"},
+                {"endpoint": "/admin/orders/*", "path": "$.order.total"},
+            ],
+        })
+        assert len(cfg.overrides) == 3
+        patterns = [ov[0] for ov in cfg.overrides]
+        assert "GET /admin/collections" in patterns
+        # bare "*" → "* /*", bare "/path" gets a "*" method prefixed
+        assert "* /*" in patterns
+        assert "* /admin/orders/*" in patterns
+        # Path is stored as a path expression, not a simple field
+        for _, rule in cfg.overrides:
+            assert rule.paths and not rule.fields
+
+    def test_endpoint_ignore_path_filters_diff(self):
+        """End-to-end: endpoint_ignore rule actually suppresses the diff line."""
+        from scout.matcher.compare import compare_pair
+        cfg = load_diff_ignore({
+            "endpoint_ignore": [
+                {"endpoint": "GET /admin/collections", "path": "$.count"},
+            ],
+        })
+        rule = cfg.rule_for("GET", "/admin/collections")
+        base = {"status_code": 200, "response_body": '{"count": 1, "items": []}'}
+        target = {"status_code": 200, "response_body": '{"count": 0, "items": []}'}
+        diff = compare_pair(base, target, ignore=rule)
+        # The $.count value diff that would normally surface gets filtered
+        assert diff.value_match is True
+        assert "$.count" not in (diff.value_diff or "")
+
 
 # -- Integration: compare_pair with ignore --
 

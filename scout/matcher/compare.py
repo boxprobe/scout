@@ -143,36 +143,14 @@ def _parse_body(body: str | None) -> Any | None:
 
 
 def _diff_schemas(base_schema: dict[str, str], target_schema: dict[str, str]) -> str:
-    """Produce a human-readable diff summary between two schemas.
-
-    Empty-array tolerance: when a path is ``array`` on both sides but the
-    ``[]`` element schema only exists on ONE side, that side simply had
-    elements in this run while the other didn't. The differ would otherwise
-    emit a stack of ``- $.X[]: object``, ``- $.X[].id: string`` lines that
-    reflect data state (one run created records, the other didn't),
-    not a real schema change. Drop those paths from the diff entirely —
-    the empty side carries no schema information to compare against.
-    """
+    """Produce a human-readable diff summary between two schemas."""
     base_keys = set(base_schema.keys())
     target_keys = set(target_schema.keys())
 
-    suppressed: set[str] = set()
-    for k, v in base_schema.items():
-        if v != "array" or target_schema.get(k) != "array":
-            continue
-        b_has_elem = (k + "[]") in base_keys
-        t_has_elem = (k + "[]") in target_keys
-        if b_has_elem == t_has_elem:
-            continue
-        prefix = k + "[]"
-        for kk in base_keys | target_keys:
-            if kk == prefix or kk.startswith(prefix + ".") or kk.startswith(prefix + "["):
-                suppressed.add(kk)
-
     lines: list[str] = []
-    added = (target_keys - base_keys) - suppressed
-    removed = (base_keys - target_keys) - suppressed
-    common = (base_keys & target_keys) - suppressed
+    added = target_keys - base_keys
+    removed = base_keys - target_keys
+    common = base_keys & target_keys
 
     for key in sorted(added):
         lines.append(f"+ {key}: {target_schema[key]}")

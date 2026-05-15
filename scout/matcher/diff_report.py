@@ -568,6 +568,38 @@ function diRemoveField(name) {{
   diOnChange();
 }}
 
+// endpoint_ignore: per-endpoint field/path ignore. The user-facing JSON
+// shape is {{ "endpoint": "METHOD /path-pattern", "path": "$.field.path" }}.
+function diHasEndpointIgnore(endpoint, path) {{
+  return (DI.endpoint_ignore || []).some(function(r) {{
+    return r.endpoint === endpoint && _canonicalKcPath(r.path) === _canonicalKcPath(path);
+  }});
+}}
+function diAddEndpointIgnore(endpoint, path) {{
+  if (!DI.endpoint_ignore) DI.endpoint_ignore = [];
+  if (!diHasEndpointIgnore(endpoint, path)) {{
+    DI.endpoint_ignore.push({{ endpoint: endpoint, path: _canonicalKcPath(path) }});
+    diOnChange();
+  }}
+}}
+function diRemoveEndpointIgnore(endpoint, path) {{
+  if (!DI.endpoint_ignore) return;
+  var cp = _canonicalKcPath(path);
+  DI.endpoint_ignore = DI.endpoint_ignore.filter(function(r) {{
+    return !(r.endpoint === endpoint && _canonicalKcPath(r.path) === cp);
+  }});
+  diOnChange();
+}}
+function toggleEndpointIgnore(btn, endpoint, path) {{
+  if (diHasEndpointIgnore(endpoint, path)) {{
+    diRemoveEndpointIgnore(endpoint, path);
+    btn.classList.remove('is-ignored');
+  }} else {{
+    diAddEndpointIgnore(endpoint, path);
+    btn.classList.add('is-ignored');
+  }}
+}}
+
 // Canonicalize a JSON path so that concrete array indices ([0], [42]), xpath-style
 // wildcards ([*]), and jsonpath-style wildcards ([]) all compare as equal. Both
 // stored rules and diff-line paths run through this for lookup, so all three forms
@@ -1002,15 +1034,35 @@ function openPopup(idx) {{
       html += '<div class="popup-section">Known Changes (' + esc(kcEndpoint) + ')</div><div>' + kcBtns.join('') + '</div>';
     }}
   }}
-  // Ignorable fields/paths buttons
+  // Ignorable fields/paths buttons. Two scopes:
+  //   - "Ignore Globally": writes to DI.fields, applies to every endpoint.
+  //   - "Ignore for this endpoint": writes to DI.endpoint_ignore with the
+  //     current method+path, applies only to rows matching this endpoint.
+  // The per-endpoint scope is the right tool when a field's diff is real
+  // for SOME endpoints (e.g. $.count for a status counter) but pure
+  // data-state noise for others (e.g. /admin/collections list length).
   var ignorables = extractIgnorables((d.diff_summary || '') + '\\n' + (d.value_diff || ''));
   if (ignorables.length > 0) {{
-    html += '<div class="popup-section">Ignore Fields / Paths</div><div>';
+    var eiEndpoint = d.method + ' ' + templatizePath(d.path);
+    html += '<div class="popup-section">Ignore Globally</div><div>';
     ignorables.forEach(function(name) {{
       var cls = diHasField(name) ? 'field-btn is-ignored' : 'field-btn';
       html += '<button class="' + cls + '" data-field="' + esc(name) + '" onclick="toggleField(this, \\'' + esc(name).replace(/'/g, "\\\\'") + '\\')">' + esc(name) + '</button>';
     }});
     html += '</div>';
+    // Per-endpoint scope. Only show for path expressions ($.…) — bare leaf
+    // names like "updated_at" would be ambiguous under a single endpoint
+    // (which occurrence of that key inside the body? usually the user wants
+    // all of them via the global scope).
+    var pathIgnorables = ignorables.filter(function(n) {{ return n.indexOf('$') === 0; }});
+    if (pathIgnorables.length > 0) {{
+      html += '<div class="popup-section">Ignore for ' + esc(eiEndpoint) + '</div><div>';
+      pathIgnorables.forEach(function(p) {{
+        var cls = diHasEndpointIgnore(eiEndpoint, p) ? 'field-btn is-ignored' : 'field-btn';
+        html += '<button class="' + cls + '" onclick="toggleEndpointIgnore(this, \\'' + esc(eiEndpoint).replace(/'/g, "\\\\'") + '\\', \\'' + esc(p).replace(/'/g, "\\\\'") + '\\')">' + esc(p) + '</button>';
+      }});
+      html += '</div>';
+    }}
   }}
   // Status-only toggle — coarse-grained "ignore body diffs, check status only".
   // Always shown when popup is open (popup is only open on rows with diffs).
