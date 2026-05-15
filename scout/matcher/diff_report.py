@@ -29,6 +29,48 @@ def _display_scenario(s: str) -> str:
     return s.replace("/", ".")
 
 
+def _query_key_set_from_url(url: str | None) -> set[str]:
+    """Reuse the alignment normalizer to get a URL's structural query key set."""
+    if not url:
+        return set()
+    from urllib.parse import urlparse
+
+    from scout.matcher.normalize import query_key_set
+    return set(query_key_set(urlparse(url).query))
+
+
+def _query_diff_html(baseline_url: str | None, target_url: str | None) -> str:
+    """Render the query-key delta between paired baseline/target URLs.
+
+    Returns an HTML snippet of ``-removed`` (red) and ``+added`` (green)
+    chips. Used in the "Query" column of the diff table so reviewers can
+    see at a glance which request parameters changed between runs without
+    opening the popup. Empty string when the queries are identical or when
+    one side has no record (column shows a dash via caller).
+    """
+    b_keys = _query_key_set_from_url(baseline_url)
+    t_keys = _query_key_set_from_url(target_url)
+    if b_keys == t_keys:
+        return ""
+    # Strip the redundant `key=` prefix when there's only one parameter
+    # name involved — for the common ``fields=a,b,c`` case the user only
+    # cares about the list items, not the parent key.
+    def _shorten(elems: set[str]) -> list[str]:
+        names = {e.split("=", 1)[0] for e in elems}
+        if len(names) == 1:
+            return sorted(e.split("=", 1)[1] if "=" in e else e for e in elems)
+        return sorted(elems)
+
+    removed = _shorten(b_keys - t_keys)
+    added = _shorten(t_keys - b_keys)
+    pieces: list[str] = []
+    for r in removed:
+        pieces.append(f'<span class="qd-rm">-{_esc(r)}</span>')
+    for a in added:
+        pieces.append(f'<span class="qd-add">+{_esc(a)}</span>')
+    return " ".join(pieces)
+
+
 def _format_body(body: str | None) -> str:
     if not body:
         return "<em>empty</em>"
@@ -225,6 +267,17 @@ def generate_diff_html(
                 f'<td style="color:{status_color}">{status_icon} {d.get("baseline_status", "")}{arrow}</td>'
             )
 
+        # Query-diff column: +added / -removed query keys between paired URLs.
+        # For one-sided rows show a dash since there's nothing to diff against.
+        if is_missing:
+            querydiff_cell_html = '<td class="cell-querydiff" style="color:#666">—</td>'
+        else:
+            qd_html = _query_diff_html(d.get("baseline_url"), d.get("target_url"))
+            querydiff_cell_html = (
+                f'<td class="cell-querydiff">{qd_html}</td>' if qd_html
+                else '<td class="cell-querydiff" style="color:#666">·</td>'
+            )
+
         row = (
             f'<tr class="diff-row" data-method="{d["method"]}" data-path="{_esc(d["path"].lower())}"'
             f' data-scenario="{_esc(_display_scenario(row_scenario).lower())}" data-status="{b_status} {t_status}"'
@@ -242,6 +295,7 @@ def generate_diff_html(
             f'<td class="cell-delta {delta_class}">{delta_display}</td>'
             f'<td>{d["method"]}</td>'
             f'{path_cell_html}'
+            f'{querydiff_cell_html}'
             f'{status_cell_html}'
             f'<td class="cell-structure" style="color:{struct_color}">{struct_icon}</td>'
             f'<td class="cell-value" style="color:{val_color}">{val_icon}</td>'
@@ -408,6 +462,20 @@ def generate_diff_html(
     padding: 10px; border-radius: 6px; max-height: 300px; overflow: auto;
     white-space: pre-wrap; word-break: break-all; margin: 4px 0 8px 0; color: #ccc;
   }}
+  .popup-query-table {{
+    width: 100%; border-collapse: collapse; font-size: 12px; font-family: monospace;
+    background: #0a0a0a; border: 1px solid #222; border-radius: 6px;
+    margin: 4px 0 8px 0; color: #ccc;
+  }}
+  .popup-query-table td {{
+    padding: 4px 8px; border-bottom: 1px solid #1a1a1a; vertical-align: top;
+    word-break: break-all;
+  }}
+  .popup-query-table tr:last-child td {{ border-bottom: none; }}
+  .popup-query-table td.qk {{ color: #a5b4fc; white-space: nowrap; width: 1px; }}
+  .cell-querydiff {{ font-family: monospace; font-size: 11px; word-break: break-all; }}
+  .cell-querydiff .qd-rm {{ color: #ef4444; margin-right: 4px; }}
+  .cell-querydiff .qd-add {{ color: #4ade80; margin-right: 4px; }}
   .toast {{
     position: fixed; top: 16px; right: 24px; z-index: 2000;
     padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 600;
@@ -949,7 +1017,31 @@ function openPopup(idx) {{
       }}
       var dur = d[side + '_duration'] != null ? d[side + '_duration'] + 'ms' : '';
       html += '<div class="popup-meta">' + esc(d[side + '_timestamp'] || '') + (dur ? '&nbsp;&nbsp;' + dur : '') + '</div>';
-      html += '<div class="popup-url">' + esc(d[side + '_url'] || '') + '</div>';
+      // Render the URL without the query string (more readable when the query
+      // is long) and break the query into a key/value table below.
+      var rawUrl = d[side + '_url'] || '';
+      var qIdx = rawUrl.indexOf('?');
+      var pathPart = qIdx === -1 ? rawUrl : rawUrl.substring(0, qIdx);
+      var queryPart = qIdx === -1 ? '' : rawUrl.substring(qIdx + 1);
+      html += '<div class="popup-url">' + esc(pathPart) + '</div>';
+      if (queryPart) {{
+        html += '<div class="popup-label">Query</div>';
+        html += '<table class="popup-query-table"><tbody>';
+        // One row per `&`-separated query parameter. Value is shown URL-decoded
+        // but otherwise raw (comma-separated lists stay as one string) — this
+        // is the actual structure of the request, not a re-shape of it.
+        queryPart.split('&').forEach(function(kv) {{
+          if (!kv) return;
+          var eq = kv.indexOf('=');
+          var k = eq === -1 ? kv : kv.substring(0, eq);
+          var v = eq === -1 ? '' : kv.substring(eq + 1);
+          var kDisp, vDisp;
+          try {{ kDisp = decodeURIComponent(k.replace(/\\+/g, ' ')); }} catch (e) {{ kDisp = k; }}
+          try {{ vDisp = decodeURIComponent(v.replace(/\\+/g, ' ')); }} catch (e) {{ vDisp = v; }}
+          html += '<tr><td class="qk">' + esc(kDisp) + '</td><td>' + esc(vDisp) + '</td></tr>';
+        }});
+        html += '</tbody></table>';
+      }}
       html += '<div class="popup-label">Request Headers</div><pre class="popup-body">' + formatJson(d[side + '_request_headers']) + '</pre>';
       html += '<div class="popup-label">Request</div><pre class="popup-body">' + formatJson(d[side + '_request']) + '</pre>';
       html += '<div class="popup-label">Response Headers</div><pre class="popup-body">' + formatJson(d[side + '_response_headers']) + '</pre>';
@@ -1140,9 +1232,9 @@ function applySort() {{
     <span id="filter-count" style="font-size:12px;color:#888;"></span>
   </div>
   <table>
-  <thead><tr><th>#</th><th>Scenario</th><th>Step</th><th>ms</th><th title="target_duration - baseline_duration">Δms</th><th>Method</th><th>Path</th><th>Status</th><th>Structure</th><th>Value</th><th>Details</th></tr></thead>
+  <thead><tr><th>#</th><th>Scenario</th><th>Step</th><th>ms</th><th title="target_duration - baseline_duration">Δms</th><th>Method</th><th>Path</th><th title="Added (+) / removed (−) query parameters between paired baseline and target URLs">Query</th><th>Status</th><th>Structure</th><th>Value</th><th>Details</th></tr></thead>
   <tbody>
-  {"".join(diff_rows) if diff_rows else '<tr><td colspan="11" style="color:#888">No endpoints recorded</td></tr>'}
+  {"".join(diff_rows) if diff_rows else '<tr><td colspan="12" style="color:#888">No endpoints recorded</td></tr>'}
   </tbody>
   </table>
 </section>

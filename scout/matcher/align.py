@@ -19,31 +19,18 @@ class AlignedPair:
     path: str
 
 
-def _exact_key(record: dict) -> tuple[str, str, tuple[str, ...]]:
-    """Grouping key: (method, normalized_path, sorted_query_keys).
+def _path_key(record: dict) -> tuple[str, str]:
+    """Grouping key: (method, normalized_path).
 
-    Path is normalized (trailing slash stripped). Query is reduced to its
-    set of parameter KEYS (sorted, values ignored). Two URLs that share a
-    path structure and a query key set are considered the same logical API
-    call — value differences are surfaced as content diffs after pairing,
-    not as separate endpoints. So:
-
-      ?limit=10&offset=0&publishable_key_id=apk_AAA  ┐ same set
-      ?limit=10&offset=0&publishable_key_id=apk_BBB  ┘ {limit,offset,publishable_key_id}
-      ?q=test-1a64e3&limit=20&fields=…               ┐ same set
-      ?q=test-726260&limit=20&fields=…               ┘ {q,limit,fields}
-
-      ?limit=10&offset=0                             → different set
-      ?limit=10&offset=0&publishable_key_id=…&extra=foo → different (extra key)
-
-    Whether a differing VALUE was a dynamic ID or a real parameter is
-    decided later by content comparison rather than by guessing from the
-    value's shape — no app-specific regex tuning required.
+    Path is normalized (trailing slash stripped). Query string is NOT part
+    of endpoint identity — different ``?…`` on the same path are different
+    REQUESTS to the same API, not different APIs. The query difference is
+    surfaced as a per-row annotation in the diff report instead of inflating
+    the endpoint-change count.
     """
     parsed = urlparse(record["url"])
     path = parsed.path.rstrip("/") or "/"
-    keys = query_key_set(parsed.query)
-    return (record["method"], path, keys)
+    return (record["method"], path)
 
 
 def align_records(
@@ -53,65 +40,93 @@ def align_records(
     """Align two sequences of API records.
 
     Strategy:
-      1. Group by (method, normalized_path, query_string) — query exact.
-      2. For target records whose key has no exact baseline match, try fuzzy
-         path match (paths_match) with the SAME query string. This handles
-         dynamic ID segments in the path while keeping query distinctions.
-      3. Within each group, pair by occurrence order (timestamp-sorted).
+      1. Group by (method, normalized_path). Fuzzy path matching
+         (:func:`paths_match`) bridges dynamic ID segments so e.g.
+         ``/admin/orders/ord_A`` and ``/admin/orders/ord_B`` end up in the
+         same group.
+      2. Within each group, pair in two stages so the obvious matches don't
+         get blocked by quirky scheduling:
 
-    Why query is part of the key: two requests to the same path with
-    different query strings — e.g. ?limit=3&fields=… and ?limit=20&offset=0
-    — are distinct logical calls (filter-search vs. paginated list). When
-    parallel React-query refetches arrive in slightly different order between
-    runs, sorting by full URL within a path-only group can pair URL_A with
-    URL_B; using query as part of the group key prevents that.
+           Stage 1 (exact query key set): records with identical query
+             keys/value-elements get matched first by occurrence order.
+             This handles the common case where baseline and target each
+             fired the same N requests to the endpoint.
+
+           Stage 2 (remaining by occurrence order): any leftover records
+             on each side are paired in timestamp order. The two records in
+             such a pair share a path but have differing query keys — they
+             still represent the same logical endpoint call (the client
+             asked the same endpoint for different field subsets), so the
+             diff report surfaces the +/- query keys in a dedicated column
+             rather than reporting them as separate endpoints.
 
     Unmatched baseline records → removed (target=None).
     Unmatched target records → added (baseline=None).
     """
-    base_groups: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
-    target_groups: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
+    base_groups: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    target_groups: dict[tuple[str, str], list[dict]] = defaultdict(list)
 
     for rec in baseline:
-        base_groups[_exact_key(rec)].append(rec)
+        base_groups[_path_key(rec)].append(rec)
 
     base_keys = list(base_groups.keys())
 
-    def _resolve_key(rec: dict) -> tuple[str, str, str]:
-        """Resolve a target record's key against baseline groups.
-
-        Try exact match first. If absent, look for a baseline key with the
-        same method + query string and a path that matches fuzzily (dynamic
-        IDs allowed). Falls back to the record's own key if no match —
-        the record then becomes a target-only "added" entry.
-        """
-        own = _exact_key(rec)
+    def _resolve_path_key(rec: dict) -> tuple[str, str]:
+        own = _path_key(rec)
         if own in base_groups:
             return own
-        own_method, own_path, own_query = own
+        own_method, own_path = own
         for bk in base_keys:
-            b_method, b_path, b_query = bk
-            if b_method == own_method and b_query == own_query and paths_match(b_path, own_path):
+            b_method, b_path = bk
+            if b_method == own_method and paths_match(b_path, own_path):
                 return bk
         return own
 
     for rec in target:
-        target_groups[_resolve_key(rec)].append(rec)
+        target_groups[_resolve_path_key(rec)].append(rec)
 
     all_keys = list(dict.fromkeys(list(base_groups.keys()) + list(target_groups.keys())))
     result: list[AlignedPair] = []
 
     for k in all_keys:
-        method, path, _query = k
+        method, path = k
         b_list = sorted(base_groups.get(k, []), key=lambda r: r.get("timestamp") or "")
         t_list = sorted(target_groups.get(k, []), key=lambda r: r.get("timestamp") or "")
 
-        pairs = min(len(b_list), len(t_list))
-        for i in range(pairs):
-            result.append(AlignedPair(baseline=b_list[i], target=t_list[i], method=method, path=path))
-        for i in range(pairs, len(b_list)):
-            result.append(AlignedPair(baseline=b_list[i], target=None, method=method, path=path))
-        for i in range(pairs, len(t_list)):
-            result.append(AlignedPair(baseline=None, target=t_list[i], method=method, path=path))
+        # Stage 1: greedy match on identical query_key_set. Both sides walk
+        # in timestamp order; the first compatible target record consumes a
+        # baseline record.
+        paired_b: set[int] = set()
+        paired_t: set[int] = set()
+        b_keys = [query_key_set(urlparse(r["url"]).query) for r in b_list]
+        t_keys = [query_key_set(urlparse(r["url"]).query) for r in t_list]
+        for i, bk in enumerate(b_keys):
+            for j, tk in enumerate(t_keys):
+                if j in paired_t:
+                    continue
+                if bk == tk:
+                    result.append(AlignedPair(
+                        baseline=b_list[i], target=t_list[j],
+                        method=method, path=path,
+                    ))
+                    paired_b.add(i)
+                    paired_t.add(j)
+                    break
+
+        # Stage 2: pair remaining records by occurrence order. These pairs
+        # share a path but have query-key differences — they'll show up in
+        # the report with a non-empty query_diff cell.
+        leftover_b = [b_list[i] for i in range(len(b_list)) if i not in paired_b]
+        leftover_t = [t_list[j] for j in range(len(t_list)) if j not in paired_t]
+        n = min(len(leftover_b), len(leftover_t))
+        for k_idx in range(n):
+            result.append(AlignedPair(
+                baseline=leftover_b[k_idx], target=leftover_t[k_idx],
+                method=method, path=path,
+            ))
+        for k_idx in range(n, len(leftover_b)):
+            result.append(AlignedPair(baseline=leftover_b[k_idx], target=None, method=method, path=path))
+        for k_idx in range(n, len(leftover_t)):
+            result.append(AlignedPair(baseline=None, target=leftover_t[k_idx], method=method, path=path))
 
     return result

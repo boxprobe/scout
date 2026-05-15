@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 
 def normalize_url(url: str) -> str:
@@ -88,15 +88,32 @@ def _parse_qs(query: str) -> dict[str, str]:
 
 
 def query_key_set(query: str) -> tuple[str, ...]:
-    """Sorted tuple of query parameter KEYS, ignoring values.
+    """Sorted tuple of structural query elements.
 
-    Two URLs that share the same path and the same query key set are taken
-    to be the same logical API call — differences in values (whether truly
-    dynamic IDs or real param values) are reported as content diffs after
-    pairing, not as separate endpoints. Adding or removing a query key is
-    what constitutes a distinct API.
+    For a query parameter whose value is a single token (no comma), the
+    element is just the key name — ``q=apple`` and ``q=banana`` produce the
+    same element ``q`` and are taken to be the same API call with different
+    runtime values.
+
+    For a parameter whose value is a comma-separated list (e.g. the common
+    REST convention ``?fields=name,address,sales_channels``), each list
+    item contributes its own ``key=elem`` element. Adding or removing an
+    item from such a list IS a request-shape change — the client is asking
+    the server for a different response schema — so the two URLs end up in
+    different alignment groups.
+
+    URL-encoded commas (``%2C``) are decoded before splitting, matching the
+    bytes a browser actually sends.
     """
-    return tuple(sorted(_parse_qs(query).keys()))
+    elements: set[str] = set()
+    for k, v in _parse_qs(query).items():
+        v_decoded = unquote(v)
+        if "," in v_decoded:
+            for part in v_decoded.split(","):
+                elements.add(f"{k}={part}")
+        else:
+            elements.add(k)
+    return tuple(sorted(elements))
 
 
 def extract_query_dynamic_pairs(query_a: str, query_b: str) -> list[tuple[str, str]]:

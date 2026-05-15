@@ -132,6 +132,43 @@ def test_query_key_set_extra_key_differs() -> None:
     assert a != b
 
 
+def test_query_key_set_comma_list_splits_into_elements() -> None:
+    """Comma-separated values (e.g. ?fields=a,b,c) split into structural elements.
+
+    Adding a list item is a request-shape change — the client is asking for
+    a different response schema — so the two URLs must NOT pair.
+    Regression for medusa stock-locations step 15: baseline asked for
+    `fields=*address` (1 element) and target asked for
+    `fields=name,metadata,*sales_channels,...` (N elements); previously the
+    short URL got cross-paired with the long one because both had a single
+    `fields` query KEY.
+    """
+    a = query_key_set("fields=*address")
+    b = query_key_set("fields=name,metadata,*sales_channels,*address,*fulfillment_providers")
+    assert a != b
+
+
+def test_query_key_set_comma_list_same_elements_pair() -> None:
+    """Two URLs whose `fields` lists are identical (any order) pair."""
+    a = query_key_set("fields=name,metadata,address")
+    b = query_key_set("fields=name,metadata,address")
+    assert a == b
+
+
+def test_query_key_set_url_encoded_comma_decoded() -> None:
+    """URL-encoded commas (%2C) must split just like literal commas."""
+    a = query_key_set("fields=name%2Cmetadata%2Caddress")
+    b = query_key_set("fields=name,metadata,address")
+    assert a == b
+
+
+def test_query_key_set_one_extra_field_in_list_differs() -> None:
+    """Exactly the medusa 2.13.6 vs 2.14.0 step 15 case: target adds `metadata`."""
+    base_q = "fields=name%2C%2Asales_channels%2C%2Aaddress%2Cfulfillment_sets.type%2C%2Afulfillment_providers"
+    target_q = "fields=name%2Cmetadata%2C%2Asales_channels%2C%2Aaddress%2Cfulfillment_sets.type%2C%2Afulfillment_providers"
+    assert query_key_set(base_q) != query_key_set(target_q)
+
+
 def test_query_key_set_short_value_still_grouped() -> None:
     """Short string values (e.g. q=test-1a64e3) get the same treatment as long IDs.
 

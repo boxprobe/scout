@@ -62,21 +62,18 @@ def test_empty_sequences() -> None:
     assert result == []
 
 
-def test_same_path_different_query_not_paired() -> None:
-    """Same path with structurally different query strings must not pair.
+def test_same_path_different_query_still_pairs_stage1_first() -> None:
+    """Same path with reordered parallel queries: stage 1 pairs by query key set.
 
-    Regression for the alignment bug where, after parallel React-query
-    refetches arrived in different order between runs, the path-only group
-    key + URL-string sort would pair ?limit=3&… (a filter-search call) with
-    ?limit=20&offset=0&… (a paginated list call). They are distinct logical
-    calls and should each pair only with the same query on the other side.
+    Both sides fired the same two filter URLs in opposite arrival order;
+    stage 1 of the two-stage alignment groups identical-query-shape records
+    together regardless of position.
     """
     base = [
         _rec("GET", "http://h/admin/api-keys?q=&limit=3&fields=id"),
         _rec("GET", "http://h/admin/api-keys?limit=20&offset=0&type=publishable"),
     ]
     target = [
-        # Target's two parallel refetches arrive in the opposite order
         _rec("GET", "http://h/admin/api-keys?limit=20&offset=0&type=publishable"),
         _rec("GET", "http://h/admin/api-keys?q=&limit=3&fields=id"),
     ]
@@ -84,21 +81,50 @@ def test_same_path_different_query_not_paired() -> None:
     paired = [p for p in result if p.baseline and p.target]
     assert len(paired) == 2
     for p in paired:
-        # Same query string on both sides of every pair
+        # Stage-1 matches always have identical query strings on both sides
         assert p.baseline["url"] == p.target["url"]
 
 
-def test_same_path_query_only_on_one_side() -> None:
-    """Different query strings → no pair: one becomes removed, the other added."""
+def test_same_path_query_differs_still_pairs_stage2() -> None:
+    """Different query strings on the same path still pair (stage 2).
+
+    Path identity defines the endpoint. ``?fields=*address`` vs
+    ``?fields=name,metadata,…`` is the SAME endpoint called with different
+    field subsets — alignment must pair them so the diff report can show
+    the query difference inline instead of inflating the endpoint-change
+    count.
+    """
     base = [_rec("GET", "http://h/admin/api-keys?q=&limit=3")]
     target = [_rec("GET", "http://h/admin/api-keys?limit=20&offset=0")]
     result = align_records(base, target)
     paired = [p for p in result if p.baseline and p.target]
-    removed = [p for p in result if p.target is None]
-    added = [p for p in result if p.baseline is None]
-    assert paired == []
-    assert len(removed) == 1
-    assert len(added) == 1
+    assert len(paired) == 1
+    assert paired[0].baseline["url"] != paired[0].target["url"]
+
+
+def test_two_stage_pairing_prefers_exact_query_match() -> None:
+    """When some records share a query and some don't, stage 1 wins first.
+
+    Regression for medusa stock-locations: each side fired the same
+    ``?fields=*address`` short query plus a full ``?fields=…`` query
+    whose item list differed. Stage 1 must pair the short queries to each
+    other, leaving the fulls (different item lists) to pair via stage 2.
+    """
+    base = [
+        _rec("GET", "http://h/admin/x?fields=name,a,b", timestamp="t1"),
+        _rec("GET", "http://h/admin/x?fields=address", timestamp="t2"),
+    ]
+    target = [
+        _rec("GET", "http://h/admin/x?fields=address", timestamp="t1"),
+        _rec("GET", "http://h/admin/x?fields=name,a,b,c", timestamp="t2"),
+    ]
+    result = align_records(base, target)
+    paired = [(p.baseline["url"], p.target["url"]) for p in result if p.baseline and p.target]
+    assert len(paired) == 2
+    # The short query pair survives intact
+    assert ("http://h/admin/x?fields=address", "http://h/admin/x?fields=address") in paired
+    # The other pair has differing queries (the +c item)
+    assert ("http://h/admin/x?fields=name,a,b", "http://h/admin/x?fields=name,a,b,c") in paired
 
 
 def test_same_query_different_id_in_path_still_pairs() -> None:
@@ -139,13 +165,13 @@ def test_dynamic_id_in_query_value_still_pairs() -> None:
     assert len(paired) == 1
 
 
-def test_extra_query_key_does_not_pair() -> None:
-    """An additional query key changes the API identity, even with the same dynamic ID."""
+def test_extra_query_key_still_pairs_via_stage2() -> None:
+    """Extra query key on target — same path → still pair, query diff surfaced later."""
     base = [_rec("GET", "http://h/admin/sales-channels?limit=10&offset=0&publishable_key_id=apk_01KRJQZKQXYQ6VZZP0F8738Y8S")]
     target = [_rec("GET", "http://h/admin/sales-channels?limit=10&offset=0&publishable_key_id=apk_01KRJR6BPMZSWTBVA0VQT0VV25&extra=foo")]
     result = align_records(base, target)
     paired = [p for p in result if p.baseline and p.target]
-    assert paired == []
+    assert len(paired) == 1
 
 
 def test_repeated_same_url_pairs_in_occurrence_order() -> None:
