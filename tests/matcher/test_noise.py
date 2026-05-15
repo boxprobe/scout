@@ -217,7 +217,7 @@ class TestLoadDiffIgnore:
 
     def test_full(self):
         cfg = load_diff_ignore({
-            "fields": ["created_at", "updated_at"],
+            "field_ignore": ["created_at", "updated_at"],
             "value_types": ["uuid", "mock_name"],
             "overrides": [
                 {
@@ -231,6 +231,11 @@ class TestLoadDiffIgnore:
         assert cfg.value_types == ("uuid", "mock_name")
         assert len(cfg.overrides) == 1
         assert cfg.overrides[0][0] == "GET /admin/orders/*"
+
+    def test_legacy_fields_key_ignored(self):
+        """Old "fields" key is no longer read — projects must rename to "field_ignore"."""
+        cfg = load_diff_ignore({"fields": ["created_at"]})
+        assert cfg.fields == ()
 
     def test_endpoint_ignore_desugars_to_override(self):
         """endpoint_ignore entries become overrides with a single path."""

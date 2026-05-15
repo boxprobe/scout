@@ -366,26 +366,27 @@ def load_diff_ignore(data: dict[str, Any] | None) -> DiffIgnoreConfig:
 
     Expected format:
     {
-        "fields": ["created_at", "updated_at", "$.orders[*].metadata"],
+        "field_ignore": ["created_at", "updated_at", "$.orders[*].metadata"],
+        "endpoint_ignore": [
+            {"endpoint": "GET /admin/collections", "path": "$.count"}
+        ],
         "value_types": ["uuid", "iso_timestamp"],
         "status_only": [
-            {"path": "/admin/notifications", "scenario": "*", "step_seq": "*"}
-        ],
-        "overrides": [
-            {
-                "pattern": "GET /admin/orders/*",
-                "fields": ["!id"],
-                "value_types": ["date"]
-            }
+            {"endpoint": "GET /admin/notifications", "scenario": "*", "step_seq": "*"}
         ]
     }
 
-    Fields starting with '$' are treated as path expressions.
+    Entries in ``field_ignore`` that start with ``$`` are treated as JSON
+    path expressions; bare strings match any field with that leaf name.
     """
     if not data:
         return DiffIgnoreConfig()
 
-    raw_fields = data.get("fields", [])
+    # Top-level field/path ignore list. Renamed from "fields" → "field_ignore"
+    # for clarity (it's an ignore rule, not the schema's field list). The
+    # legacy "fields" key is no longer read — projects must update their
+    # diff_ignore.json on upgrade.
+    raw_fields = data.get("field_ignore", [])
     # Separate simple names from path expressions
     simple_fields: list[str] = []
     path_exprs: list[str] = []
