@@ -143,14 +143,36 @@ def _parse_body(body: str | None) -> Any | None:
 
 
 def _diff_schemas(base_schema: dict[str, str], target_schema: dict[str, str]) -> str:
-    """Produce a human-readable diff summary between two schemas."""
+    """Produce a human-readable diff summary between two schemas.
+
+    Empty-array tolerance: when a path is ``array`` on both sides but the
+    ``[]`` element schema only exists on ONE side, that side simply had
+    elements in this run while the other didn't. The differ would otherwise
+    emit a stack of ``- $.X[]: object``, ``- $.X[].id: string`` lines that
+    reflect data state (one run created records, the other didn't),
+    not a real schema change. Drop those paths from the diff entirely —
+    the empty side carries no schema information to compare against.
+    """
     base_keys = set(base_schema.keys())
     target_keys = set(target_schema.keys())
 
+    suppressed: set[str] = set()
+    for k, v in base_schema.items():
+        if v != "array" or target_schema.get(k) != "array":
+            continue
+        b_has_elem = (k + "[]") in base_keys
+        t_has_elem = (k + "[]") in target_keys
+        if b_has_elem == t_has_elem:
+            continue
+        prefix = k + "[]"
+        for kk in base_keys | target_keys:
+            if kk == prefix or kk.startswith(prefix + ".") or kk.startswith(prefix + "["):
+                suppressed.add(kk)
+
     lines: list[str] = []
-    added = target_keys - base_keys
-    removed = base_keys - target_keys
-    common = base_keys & target_keys
+    added = (target_keys - base_keys) - suppressed
+    removed = (base_keys - target_keys) - suppressed
+    common = (base_keys & target_keys) - suppressed
 
     for key in sorted(added):
         lines.append(f"+ {key}: {target_schema[key]}")
@@ -286,26 +308,33 @@ def compare_pair(
             diff_summary="Response type mismatch (JSON vs non-JSON)",
         )
 
-    # Both JSON — compare structure
+    # Both JSON — compare structure. structure_match is derived from the
+    # post-_diff_schemas output rather than raw schema equality, because
+    # _diff_schemas applies its own suppression (e.g. empty-array tolerance)
+    # and the boolean should agree with what the user sees.
     b_schema = _json_schema(b_body)
     t_schema = _json_schema(t_body)
-    structure_match = (b_schema == t_schema)
-    diff_summary = "" if structure_match else _diff_schemas(b_schema, t_schema)
+    diff_summary = _diff_schemas(b_schema, t_schema)
+    structure_match = not bool(diff_summary.strip())
 
-    # Post-filter structure diff by path expressions
+    # Post-filter structure diff by path expressions. Path-based ignores are
+    # project-wide noise rules — we drop them destructively from diff_summary
+    # so they never reach the report.
     if ignore and ignore.paths and diff_summary:
         diff_summary = filter_diff_lines(diff_summary, ignore.paths)
         structure_match = not bool(diff_summary.strip())
 
-    # Post-filter by known version changes (structure + value)
+    # Known version changes are filtered NON-destructively: structure_match
+    # reflects the post-filter view (so a fully-covered row counts as a
+    # match), but the raw diff_summary is preserved so the report can
+    # render the affected paths and mark them as KNOWN.
     method = baseline.get("method", "") or target.get("method", "")
-
     if known_changes and target_version and diff_summary:
-        diff_summary = filter_known_changes(
+        filtered_for_known = filter_known_changes(
             diff_summary, known_changes, target_version,
             method=method, api_path=api_path,
         )
-        structure_match = not bool(diff_summary.strip())
+        structure_match = not bool(filtered_for_known.strip())
 
     # Compare values (with value-type noise suppression)
     vt = ignore.value_types if ignore else ()

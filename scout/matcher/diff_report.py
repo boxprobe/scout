@@ -287,6 +287,7 @@ def generate_diff_html(
             f' data-duration-delta="{data_delta}"'
             f' data-orig-structure="{1 if d["structure_match"] else 0}"'
             f' data-orig-value="{1 if val_match else 0}"'
+            f' data-diff-summary="{_esc(detail)}"'
             f' data-diff-types="{data_diff_types}">'
             f'<td style="color:#666">{idx + 1}</td>'
             f'<td class="cell-scenario">{_display_scenario(row_scenario)}</td>'
@@ -355,6 +356,15 @@ def generate_diff_html(
   .row-label-so {{ background: #134e4a; color: #5eead4; }}
   .row-label-added {{ background: #14532d; color: #6ee7b7; }}
   .row-label-removed {{ background: #7f1d1d; color: #fca5a5; }}
+  .row-label-known {{ background: #134e4a; color: #5eead4; }}
+  .cell-structure {{ font-family: monospace; font-size: 11px; word-break: break-all; }}
+  .cell-structure .qd-add, .cell-structure .qd-rm, .cell-structure .qd-chg {{
+    margin-right: 4px; display: inline-block;
+  }}
+  .cell-structure .qd-add {{ color: #4ade80; }}
+  .cell-structure .qd-rm {{ color: #ef4444; }}
+  .cell-structure .qd-chg {{ color: #f59e0b; }}
+  .cell-structure .qd-dim {{ opacity: 0.4; text-decoration: line-through; }}
 
   /* SO button (rendered inside popup) */
   .so-btn {{
@@ -740,6 +750,42 @@ function toggleSO(btn) {{
   updateRowLabels();
 }}
 
+// Render the Structure cell for a row by mixing the raw diff_summary
+// (server-stored) with the current DI.known_changes state. Each + / - / ~
+// diff line becomes a chip; chips whose path is covered by a known_change
+// rule get dimmed. When every line is covered → return a single KNOWN
+// badge. When there are no lines at all → ✓. The version-gate (rule.since
+// vs target_version) check lives in diHasKnownChange already.
+function renderStructureCellHtml(row) {{
+  var raw = row.dataset.diffSummary || '';
+  if (!raw.trim()) {{
+    return {{ html: '<span style="color:#4ade80">\\u2713</span>' }};
+  }}
+  var endpoint = (row.dataset.method || '*').toUpperCase() + ' ' + templatizePath(row.dataset.rawPath);
+  var lines = raw.split('\\n').filter(function(l) {{ return l.trim(); }});
+  var chips = [];
+  var knownCount = 0;
+  lines.forEach(function(line) {{
+    var m = line.match(/^([+\\-~])\\s+(\\$\\S+?):\\s*(.+)$/);
+    if (!m) return;
+    var sign = m[1];
+    var path = m[2];
+    var isKnown = false;
+    if (sign === '+' || sign === '-') {{
+      var change = sign === '+' ? 'added' : 'removed';
+      isKnown = diHasKnownChange(endpoint, path, change);
+    }}
+    if (isKnown) knownCount++;
+    var cls = sign === '+' ? 'qd-add' : (sign === '-' ? 'qd-rm' : 'qd-chg');
+    if (isKnown) cls += ' qd-dim';
+    chips.push('<span class="' + cls + '">' + sign + esc(path) + '</span>');
+  }});
+  if (lines.length > 0 && knownCount === lines.length) {{
+    return {{ html: '<span class="row-label row-label-known">KNOWN</span>' }};
+  }}
+  return {{ html: chips.join(' ') }};
+}}
+
 // -- Row labels (SO / ADDED / REMOVED) reflect current DI state --
 function computeRowLabels(row) {{
   var labels = [];
@@ -753,15 +799,11 @@ function computeRowLabels(row) {{
   var fullyEqual = origStruct && origValue;
   var method = (row.dataset.method || '*').toUpperCase();
   if (!fullyEqual && diHasStatusOnly(method, path, scenario, stepSeq)) labels.push('SO');
-  var endpoint = method + ' ' + path;
-  var hasAdded = false, hasRemoved = false;
-  (DI.known_changes || []).forEach(function(kc) {{
-    if (kc.endpoint !== endpoint) return;
-    if (kc.change === 'added') hasAdded = true;
-    else if (kc.change === 'removed') hasRemoved = true;
-  }});
-  if (hasAdded) labels.push('ADDED');
-  if (hasRemoved) labels.push('REMOVED');
+  // ADDED/REMOVED endpoint-level chips have been removed: the Structure
+  // column now shows the actual +path/-path chips per row (or a KNOWN
+  // badge when every line is covered), which is both more specific and
+  // less misleading — the old chip fired whenever ANY rule existed for the
+  // endpoint, even on rows where the rule wasn't doing any work.
   return labels;
 }}
 function updateRowLabels() {{
@@ -791,15 +833,18 @@ function updateRowLabels() {{
     var badge = row.querySelector('.diff-badge');
     if (soActive && !fullyEqual) {{
       // SO is genuinely suppressing a structure or value diff — show —
-      if (structCell) {{ structCell.textContent = '\\u2014'; structCell.style.color = '#555'; }}
+      if (structCell) {{ structCell.innerHTML = '\\u2014'; structCell.style.color = '#555'; }}
       if (valueCell) {{ valueCell.textContent = '\\u2014'; valueCell.style.color = '#555'; }}
       if (badge) badge.style.display = 'none';
     }} else {{
-      // Either SO inactive, or SO active but the comparison is naturally clean.
-      // Restore original ✓/✗ from data attrs.
+      // Structure cell: rich display driven by the raw diff_summary +
+      // current known_changes rules. No diffs at all → ✓; every line
+      // covered by a known_change rule → KNOWN badge; otherwise render
+      // each diff path as a +/-/~ chip with the matching ones dimmed.
       if (structCell) {{
-        structCell.textContent = origStruct ? '\\u2713' : '\\u2717';
-        structCell.style.color = origStruct ? '#4ade80' : '#ef4444';
+        var rendered = renderStructureCellHtml(row);
+        structCell.innerHTML = rendered.html;
+        structCell.style.color = '';
       }}
       if (valueCell) {{
         valueCell.textContent = origValue ? '\\u2713' : '\\u2717';
