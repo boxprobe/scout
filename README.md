@@ -11,6 +11,10 @@ traffic, and produces a diff report between two runs. When a deploy silently
 changes a response shape, scout tells you which endpoint changed, in which
 user flow, and exactly how.
 
+Scenarios are recorded once and replay deterministically — no AI in the
+hot path, no per-request API fees, no SaaS subscription. Same scenario on
+the same app produces the same trace, at **$0 per run**.
+
 ---
 
 ## Why it has to be open source
@@ -35,14 +39,16 @@ If something looks off, you read the source. That's the deal.
 
 ## Why scout
 
-- **Pixel-precise element location.** Scenarios reference elements by
-  annotation-time bounding boxes, not CSS selectors. Refactoring class names
-  doesn't break tests.
-- **Deterministic replay.** Scenarios are plain Python — no AI tokens consumed
-  at runtime, no LLM in the hot path. Same input, same trace.
+- **Deterministic, and free to run.** Pixel-anchored locators make element
+  resolution pure math, not a probabilistic selector match. No AI runs in
+  the hot path. No tokens consumed, no per-request API fees. Cheap enough
+  to run on every PR and nightly without anyone asking about cost.
+- **Locators survive refactors.** Elements are referenced by their on-page
+  bounding box at recording time, not by CSS class names. Renaming
+  `.btn-primary-large` to `.PrimaryButton__lg` doesn't break tests.
 - **Real cross-version diff.** Run against `v1.0`, run against `v1.1`,
-  `scout diff` produces an HTML report grouping changes by endpoint and user
-  flow. Surface real regressions, not selector breakage.
+  `scout diff` produces an HTML report grouping changes by endpoint and
+  user flow. Surface real regressions, not selector breakage.
 - **Narrow scope.** scout catches one specific class of bug: API behavior
   drift that survives your existing tests because it only manifests through
   real UI interaction.
