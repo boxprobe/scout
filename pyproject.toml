@@ -50,7 +50,7 @@ dependencies = [
 [project.urls]
 Homepage = "https://boxprobe.com"
 Repository = "https://github.com/boxprobe/scout"
-Documentation = "https://github.com/boxprobe/scout#readme"
+Documentation = "https://boxprobe.github.io/scout/"
 Issues = "https://github.com/boxprobe/scout/issues"
 Changelog = "https://github.com/boxprobe/scout/blob/main/CHANGELOG.md"
 
@@ -75,6 +75,11 @@ dev = [
     "pytest-timeout",
     "ruff",
     "pyright",
+]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "pymdown-extensions>=10",
 ]
 
 [project.scripts]
