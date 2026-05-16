@@ -43,11 +43,11 @@ Run the test suite:
 uv run pytest tests/ -x --tb=short
 ```
 
-> **Why `uv run`?** scout pins Python ≥ 3.11 and mixes Python with a
-> Rust subprocess (`hudsucker`). `uv run` guarantees the venv interpreter
-> matches `pyproject.toml`'s `requires-python`; bare `python` / `pip` will
-> silently use whatever system Python is first on PATH, producing
-> hard-to-debug version drift.
+> **Why `uv run`?** scout pins Python ≥ 3.11 and spawns `mitmproxy` as a
+> child Python process. `uv run` guarantees the venv interpreter matches
+> `pyproject.toml`'s `requires-python` for both the CLI and the subprocess;
+> bare `python` / `pip` will silently use whatever system Python is first
+> on PATH, producing hard-to-debug version drift.
 
 Lint and type-check before pushing:
 

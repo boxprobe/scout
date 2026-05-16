@@ -11,9 +11,25 @@ traffic, and produces a diff report between two runs. When a deploy silently
 changes a response shape, scout tells you which endpoint changed, in which
 user flow, and exactly how.
 
-It is **not** a contract testing tool — there's no OpenAPI spec to maintain. You
-record what your UI actually triggers, and the test fails when the same clicks
-produce different bytes against a new version of your backend.
+---
+
+## Why it has to be open source
+
+scout will run inside your CI, drive your app's UI, and capture every HTTP
+request and response that flows through your app during execution. That
+level of access has to be auditable, not taken on trust:
+
+- **Source is open and short.** Every Python file is reviewable before
+  scout touches your repo.
+- **Nothing leaves your machine.** Recordings, diff reports, and run
+  history all stay on the host running scout. No telemetry, no phone-home,
+  no upload step.
+- **No account required.** scout is a local CLI. If you block outbound
+  network at the firewall, it still works against a locally running app.
+- **The recording proxy is a child process on `localhost`.** You can attach
+  a debugger to it like any other process.
+
+If something looks off, you read the source. That's the deal.
 
 ---
 
@@ -27,10 +43,22 @@ produce different bytes against a new version of your backend.
 - **Real cross-version diff.** Run against `v1.0`, run against `v1.1`,
   `scout diff` produces an HTML report grouping changes by endpoint and user
   flow. Surface real regressions, not selector breakage.
-- **Honest scope.** scout doesn't try to be your unit test runner or your
-  load testing tool. It catches one specific class of bug: API behavior drift
-  that survives your existing tests because it only manifests through real UI
-  interaction.
+- **Narrow scope.** scout catches one specific class of bug: API behavior
+  drift that survives your existing tests because it only manifests through
+  real UI interaction.
+
+---
+
+## What scout isn't
+
+scout has a deliberately narrow scope. It does **not** try to be:
+
+- **A contract testing tool** — you don't write an OpenAPI spec; scout
+  observes what the UI actually triggers
+- **A load test runner** — one scenario, one user, deterministic replay
+- **A unit test replacement** — unit tests catch logic bugs in your code;
+  scout catches behavioral drift in your API
+- **A cloud service** — local CLI, no account, no upload
 
 ---
 
@@ -107,9 +135,9 @@ scout diff baseline target
                                  └── HTML report grouped by user flow + endpoint
 ```
 
-The recording proxy is a separate Rust binary (`hudsucker`) launched as a
-subprocess. Tests run headless by default; pass `scout verify` for a debug
-mode with screenshots and no proxy.
+The recording proxy is `mitmproxy` running in a child process. Tests run
+headless by default; pass `scout verify` for a debug mode with screenshots
+and no proxy.
 
 ---
 
@@ -136,12 +164,23 @@ What's coming:
 
 ---
 
-## Authoring scenarios
+## Using scout
 
-Hand-writing locators with pixel coordinates is possible but tedious. The
+The common pattern is **accepting scout-runnable test PRs**:
+
+1. A contributor opens a PR adding scenarios under `tests-regression/`
+   (or wherever you prefer).
+2. Your CI runs `scout run` against the baseline and target versions of the
+   app, then `scout diff` against the two recordings.
+3. The diff report goes up as a PR comment or build artifact.
+4. You review like any other PR. The tests are plain Python, the diff
+   report is a self-contained HTML file — no proprietary format to inspect.
+
+Hand-writing scenarios from scratch is also supported but tedious at scale,
+since pixel-anchored Locator coordinates are awkward to type by hand. The
 scenario file format is open and stable enough to target with your own
-recording tooling — point a browser-extension or annotation pipeline at it
-and emit `test.py` files in the format above.
+recording tooling — point a browser extension or annotation pipeline at it
+and emit `test.py` files in the format shown in the Quickstart.
 
 ---
 
