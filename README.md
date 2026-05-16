@@ -2,8 +2,8 @@
 
 **UI-driven API regression testing.** Maintained by [BoxProbe](https://boxprobe.com).
 
-[![PyPI](https://img.shields.io/pypi/v/boxprobe-scout.svg)](https://pypi.org/project/boxprobe-scout/)
-[![Python](https://img.shields.io/pypi/pyversions/boxprobe-scout.svg)](https://pypi.org/project/boxprobe-scout/)
+[![PyPI](https://img.shields.io/pypi/v/boxprobe-scout?v=1)](https://pypi.org/project/boxprobe-scout/)
+[![Python](https://img.shields.io/pypi/pyversions/boxprobe-scout?v=1)](https://pypi.org/project/boxprobe-scout/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 scout drives your web app's UI like a real user, records the resulting API
