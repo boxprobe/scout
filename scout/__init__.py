@@ -1,1 +1,1 @@
-"""BoxProbe — Black-box testing, pinpoint precision."""
+"""scout — UI-driven API regression testing."""

@@ -1,11 +1,11 @@
 """Mock variable registry — single source of truth for generation + detection.
 
 Each MockVar defines:
-- gen_expr: Python expression used by argus codegen (evaluates to str)
-- detect_re: regex used by scout noise detector to recognize generated values
+- gen_expr: Python expression emitted into generated test files (evaluates to str at runtime)
+- detect_re: regex used by the diff-noise filter to recognize generated values
 
-Adding a new $variable? Add it here. Both codegen and noise filtering
-pick it up automatically.
+Adding a new $variable? Add it here. Both code generation and noise
+filtering pick it up automatically.
 """
 
 from __future__ import annotations
@@ -137,8 +137,8 @@ for _k, _g, _d in _FIXED_DEFS:
 def resolve_gen_expr(key: str) -> str | None:
     """Return the Python gen_expr for a $-generator key, or None if unknown.
 
-    Checks fixed vars first, then parametric matchers.
-    Used by argus codegen.
+    Checks fixed vars first, then parametric matchers. Called by test-file
+    generators when emitting a scenario.
     """
     fixed = FIXED_VARS.get(key)
     if fixed:
