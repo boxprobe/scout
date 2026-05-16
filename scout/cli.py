@@ -1,4 +1,4 @@
-"""Scout CLI — Black-box testing, pinpoint precision."""
+"""scout CLI — UI-driven API regression testing."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def _find_repo_root(paths: list[str]) -> Path:
 @click.group()
 @click.version_option()
 def main() -> None:
-    """Scout — Black-box testing, pinpoint precision."""
+    """scout — UI-driven API regression testing."""
 
 
 @main.command()

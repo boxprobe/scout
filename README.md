@@ -170,6 +170,21 @@ What's coming:
 
 ---
 
+## Try it on a real app
+
+We maintain a reproducible demo against real [Medusa](https://github.com/medusajs/medusa) —
+two pinned versions running side by side, 15 admin scenarios, one HTML
+diff report:
+
+**[github.com/boxprobe/scout-medusa](https://github.com/boxprobe/scout-medusa)**
+
+Clone, `docker compose up`, run scout twice, see the diff. No hand-coded
+locators, no toy example — scout exercises real Medusa admin flows
+(login, customer CRUD, inventory, draft orders, ...) against two
+upstream releases.
+
+---
+
 ## Using scout
 
 The common pattern is **accepting scout-runnable test PRs**:

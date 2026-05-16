@@ -9,6 +9,18 @@ minor versions; patch versions remain backward-compatible bug fixes.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-05-16
+
+### Fixed
+- `scout --help` and the `scout.cli` module docstring still showed the
+  old "Black-box testing, pinpoint precision" tagline. Updated to
+  match the rest of the project's positioning: "UI-driven API
+  regression testing".
+
+### Changed
+- README points at the new [boxprobe/scout-medusa](https://github.com/boxprobe/scout-medusa)
+  demo repo as a working reference deployment.
+
 ## [0.1.3] - 2026-05-16
 
 Initial public release on PyPI. Prior `0.1.x` versions were distributed
@@ -30,5 +42,6 @@ for external consumers.
   known-change badges
 - JUnit XML report alongside HTML for CI integration
 
-[Unreleased]: https://github.com/boxprobe/scout/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/boxprobe/scout/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/boxprobe/scout/releases/tag/v0.1.4
 [0.1.3]: https://github.com/boxprobe/scout/releases/tag/v0.1.3
