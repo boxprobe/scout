@@ -51,8 +51,15 @@ class Locator:
 
     __slots__ = (
         "_resolved_bbox",
-        "bbox", "dynamic", "filter", "name",
-        "parent", "pos_offset", "pos_type", "scroll_y", "tag",
+        "bbox",
+        "dynamic",
+        "filter",
+        "name",
+        "parent",
+        "pos_offset",
+        "pos_type",
+        "scroll_y",
+        "tag",
     )
 
     def __init__(
@@ -95,8 +102,11 @@ class Locator:
         elif self.pos_type == "dxy":
             parent_bbox = self._get_parent_bbox(registry)
             if parent_bbox is None:
-                log.warning("dxy locator %r: parent %r not resolved, using raw bbox",
-                            self.name, self.parent)
+                log.warning(
+                    "dxy locator %r: parent %r not resolved, using raw bbox",
+                    self.name,
+                    self.parent,
+                )
                 self._resolved_bbox = {"x": x, "y": y, "w": w, "h": h}
             else:
                 dx = self.pos_offset.get("dx", 0)
@@ -104,14 +114,18 @@ class Locator:
                 self._resolved_bbox = {
                     "x": parent_bbox["x"] + dx,
                     "y": parent_bbox["y"] + dy,
-                    "w": w, "h": h,
+                    "w": w,
+                    "h": h,
                 }
 
         elif self.pos_type == "rel":
             parent_bbox = self._get_parent_bbox(registry)
             if parent_bbox is None:
-                log.warning("rel locator %r: parent %r not resolved, using raw bbox",
-                            self.name, self.parent)
+                log.warning(
+                    "rel locator %r: parent %r not resolved, using raw bbox",
+                    self.name,
+                    self.parent,
+                )
                 self._resolved_bbox = {"x": x, "y": y, "w": w, "h": h}
             else:
                 rx = self._resolve_rel_x(parent_bbox, w)
@@ -148,9 +162,7 @@ class Locator:
 
     # ── Dynamic resolution (needs Playwright page) ───────────────────────────
 
-    async def resolve(
-        self, page: PwPage, registry: dict[str, Locator]
-    ) -> dict[str, int]:
+    async def resolve(self, page: PwPage, registry: dict[str, Locator]) -> dict[str, int]:
         """Full resolution: static → dynamic resize → filter narrowing.
 
         Call this at runtime before interacting with the element.
@@ -168,9 +180,14 @@ class Locator:
             if dyn_w or dyn_h:
                 actual = await self._probe_dynamic(page, dyn_w, dyn_h)
                 if actual:
-                    log.info("Dynamic resize: %s → %dx%d (was %dx%d)",
-                             self.name, actual["w"], actual["h"],
-                             self._resolved_bbox["w"], self._resolved_bbox["h"])
+                    log.info(
+                        "Dynamic resize: %s → %dx%d (was %dx%d)",
+                        self.name,
+                        actual["w"],
+                        actual["h"],
+                        self._resolved_bbox["w"],
+                        self._resolved_bbox["h"],
+                    )
                     self._resolved_bbox = actual
 
         # Step 2b: re-resolve rel/dxy children whose parents may have changed
@@ -184,10 +201,15 @@ class Locator:
         if self.filter:
             filtered = await self._apply_filter(page)
             if filtered:
-                log.info("Filter applied: %s [%s] → bbox(%d,%d %dx%d)",
-                         self.name, self.filter,
-                         filtered["x"], filtered["y"],
-                         filtered["w"], filtered["h"])
+                log.info(
+                    "Filter applied: %s [%s] → bbox(%d,%d %dx%d)",
+                    self.name,
+                    self.filter,
+                    filtered["x"],
+                    filtered["y"],
+                    filtered["w"],
+                    filtered["h"],
+                )
                 self._resolved_bbox = filtered
 
         return self._resolved_bbox
@@ -264,10 +286,14 @@ class Locator:
                 return null;
             }""",
             {
-                "origX": bb["x"], "origY": bb["y"],
-                "origW": bb["w"], "origH": bb["h"],
-                "dynW": dyn_w, "dynH": dyn_h,
-                "POS_T": _POS_TOLERANCE, "DIM_T": _DIM_TOLERANCE,
+                "origX": bb["x"],
+                "origY": bb["y"],
+                "origW": bb["w"],
+                "origH": bb["h"],
+                "dynW": dyn_w,
+                "dynH": dyn_h,
+                "POS_T": _POS_TOLERANCE,
+                "DIM_T": _DIM_TOLERANCE,
             },
         )
 
@@ -316,8 +342,12 @@ class Locator:
                 };
             }""",
             {
-                "filter": self.filter, "bx": bb["x"], "by": bb["y"],
-                "bw": bb["w"], "bh": bb["h"], "POS_T": _FILTER_POS_TOLERANCE,
+                "filter": self.filter,
+                "bx": bb["x"],
+                "by": bb["y"],
+                "bw": bb["w"],
+                "bh": bb["h"],
+                "POS_T": _FILTER_POS_TOLERANCE,
             },
         )
 

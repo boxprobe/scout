@@ -12,18 +12,22 @@ from scout.cli import main
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     """Create a minimal delivery repo with app.json and one scenario."""
-    (tmp_path / "app.json").write_text(json.dumps({
-        "name": "test-app",
-        "web_base_url": "http://localhost",
-    }))
+    (tmp_path / "app.json").write_text(
+        json.dumps(
+            {
+                "name": "test-app",
+                "web_base_url": "http://localhost",
+            }
+        )
+    )
     sc = tmp_path / "scenarios" / "demo" / "hello"
     sc.mkdir(parents=True)
     (sc / "test.py").write_text(
-        'from scout.runner import Scenario, Page\n'
+        "from scout.runner import Scenario, Page\n"
         'scenario = Scenario(name="hello", base_url="http://localhost")\n'
-        '@scenario.test\n'
-        'async def test(page: Page):\n'
-        '    pass\n'
+        "@scenario.test\n"
+        "async def test(page: Page):\n"
+        "    pass\n"
     )
     return tmp_path
 

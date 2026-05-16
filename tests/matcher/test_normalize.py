@@ -11,7 +11,9 @@ from scout.matcher.normalize import (
 
 def test_strip_query_params() -> None:
     """URL is reduced to method + path, query params stripped."""
-    assert normalize_url("http://localhost:19000/admin/orders?limit=20&offset=0") == "/admin/orders"
+    assert (
+        normalize_url("http://localhost:19000/admin/orders?limit=20&offset=0") == "/admin/orders"
+    )
 
 
 def test_strip_scheme_and_host() -> None:
@@ -34,10 +36,13 @@ def test_paths_match_different_id_segment() -> None:
 
 def test_paths_match_different_id_preserves_context() -> None:
     """Nested paths with ID segments match when structure is same."""
-    assert paths_match(
-        "/admin/orders/ord_ABC/items",
-        "/admin/orders/ord_XYZ/items",
-    ) is True
+    assert (
+        paths_match(
+            "/admin/orders/ord_ABC/items",
+            "/admin/orders/ord_XYZ/items",
+        )
+        is True
+    )
 
 
 def test_paths_match_different_endpoints() -> None:
@@ -52,10 +57,13 @@ def test_paths_match_different_length() -> None:
 
 def test_paths_match_multiple_id_segments() -> None:
     """Multiple ID segments can differ."""
-    assert paths_match(
-        "/admin/orders/ord_A/items/item_1",
-        "/admin/orders/ord_B/items/item_2",
-    ) is True
+    assert (
+        paths_match(
+            "/admin/orders/ord_A/items/item_1",
+            "/admin/orders/ord_B/items/item_2",
+        )
+        is True
+    )
 
 
 def test_paths_match_all_segments_differ() -> None:

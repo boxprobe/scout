@@ -60,7 +60,7 @@ class _NumberVar(MockVar):
             frac_hi = 10**frac - 1
             gen = (
                 f'str(random.randint({lo}, {hi})) + "." + '
-                f'str(random.randint(0, {frac_hi})).zfill({frac})'
+                f"str(random.randint(0, {frac_hi})).zfill({frac})"
             )
         return MockVar(
             key=key,
@@ -80,7 +80,7 @@ class _TextVar(MockVar):
         n = m.group(1) or "16"
         return MockVar(
             key=key,
-            gen_expr=f'secrets.token_hex({int(n) // 2 + 1})[:{n}]',
+            gen_expr=f"secrets.token_hex({int(n) // 2 + 1})[:{n}]",
             detect_re=re.compile(""),  # not auto-detectable
         )
 
@@ -93,7 +93,9 @@ FIXED_VARS: dict[str, MockVar] = {}
 
 
 def _fixed(key: str, gen_expr: str, detect_key: str) -> None:
-    FIXED_VARS[key] = MockVar(key=key, gen_expr=gen_expr, detect_re=MOCK_DETECTORS.get(detect_key, re.compile("")))
+    FIXED_VARS[key] = MockVar(
+        key=key, gen_expr=gen_expr, detect_re=MOCK_DETECTORS.get(detect_key, re.compile(""))
+    )
 
 
 # -- Detection patterns (used by noise.py) -----------------------------------

@@ -1,7 +1,6 @@
 """Tests for matcher/noise.py — diff noise reduction."""
 
-import pytest
-
+from scout.matcher.compare import compare_pair
 from scout.matcher.noise import (
     DiffIgnoreConfig,
     IgnoreRule,
@@ -10,10 +9,9 @@ from scout.matcher.noise import (
     load_diff_ignore,
     should_ignore_value_diff,
 )
-from scout.matcher.compare import compare_pair
-
 
 # -- detect_value_type --
+
 
 class TestDetectValueType:
     def test_uuid(self):
@@ -65,10 +63,16 @@ class TestDetectValueType:
         assert detect_value_type("order_01KR05P3ABCDEF1234567890") == "prefixed_id"
 
     def test_hex_token(self):
-        assert detect_value_type("pk_4150f59c68f49687ec9f1db222566dbc41cf4a89fda8c4c2850334b8a84fa565") == "hex_token"
+        assert (
+            detect_value_type(
+                "pk_4150f59c68f49687ec9f1db222566dbc41cf4a89fda8c4c2850334b8a84fa565"
+            )
+            == "hex_token"
+        )
 
 
 # -- filter_body --
+
 
 class TestFilterBody:
     def test_remove_simple_field(self):
@@ -120,6 +124,7 @@ class TestFilterBody:
 
 # -- should_ignore_value_diff --
 
+
 class TestShouldIgnoreValueDiff:
     def test_both_uuid(self):
         a = "550e8400-e29b-41d4-a716-446655440000"
@@ -140,7 +145,12 @@ class TestShouldIgnoreValueDiff:
         assert should_ignore_value_diff(a, b, ("iso_timestamp",)) is False
 
     def test_mixed_types(self):
-        assert should_ignore_value_diff("test-abc", "2026-01-01T00:00:00Z", ("mock_name", "iso_timestamp")) is False
+        assert (
+            should_ignore_value_diff(
+                "test-abc", "2026-01-01T00:00:00Z", ("mock_name", "iso_timestamp")
+            )
+            is False
+        )
 
     def test_one_not_detected(self):
         assert should_ignore_value_diff("test-abc123", "hello", ("mock_name",)) is False
@@ -150,6 +160,7 @@ class TestShouldIgnoreValueDiff:
 
 
 # -- DiffIgnoreConfig --
+
 
 class TestDiffIgnoreConfig:
     def test_global_rule(self):
@@ -175,9 +186,7 @@ class TestDiffIgnoreConfig:
     def test_override_removes(self):
         cfg = DiffIgnoreConfig(
             fields=("id", "created_at"),
-            overrides=(
-                ("* /admin/orders/*", IgnoreRule(fields=("!id",))),
-            ),
+            overrides=(("* /admin/orders/*", IgnoreRule(fields=("!id",))),),
         )
         rule = cfg.rule_for("POST", "/admin/orders/new")
         assert "id" not in rule.fields
@@ -186,24 +195,21 @@ class TestDiffIgnoreConfig:
     def test_no_match(self):
         cfg = DiffIgnoreConfig(
             fields=("created_at",),
-            overrides=(
-                ("GET /admin/orders/*", IgnoreRule(fields=("extra",))),
-            ),
+            overrides=(("GET /admin/orders/*", IgnoreRule(fields=("extra",))),),
         )
         rule = cfg.rule_for("GET", "/admin/products/1")
         assert "extra" not in rule.fields
 
     def test_wildcard_method(self):
         cfg = DiffIgnoreConfig(
-            overrides=(
-                ("* /admin/*", IgnoreRule(fields=("metadata",))),
-            ),
+            overrides=(("* /admin/*", IgnoreRule(fields=("metadata",))),),
         )
         rule = cfg.rule_for("DELETE", "/admin/foo")
         assert "metadata" in rule.fields
 
 
 # -- load_diff_ignore --
+
 
 class TestLoadDiffIgnore:
     def test_none(self):
@@ -216,17 +222,19 @@ class TestLoadDiffIgnore:
         assert cfg.fields == ()
 
     def test_full(self):
-        cfg = load_diff_ignore({
-            "field_ignore": ["created_at", "updated_at"],
-            "value_types": ["uuid", "mock_name"],
-            "overrides": [
-                {
-                    "pattern": "GET /admin/orders/*",
-                    "fields": ["!id"],
-                    "value_types": ["date"],
-                }
-            ],
-        })
+        cfg = load_diff_ignore(
+            {
+                "field_ignore": ["created_at", "updated_at"],
+                "value_types": ["uuid", "mock_name"],
+                "overrides": [
+                    {
+                        "pattern": "GET /admin/orders/*",
+                        "fields": ["!id"],
+                        "value_types": ["date"],
+                    }
+                ],
+            }
+        )
         assert cfg.fields == ("created_at", "updated_at")
         assert cfg.value_types == ("uuid", "mock_name")
         assert len(cfg.overrides) == 1
@@ -239,13 +247,15 @@ class TestLoadDiffIgnore:
 
     def test_endpoint_ignore_desugars_to_override(self):
         """endpoint_ignore entries become overrides with a single path."""
-        cfg = load_diff_ignore({
-            "endpoint_ignore": [
-                {"endpoint": "GET /admin/collections", "path": "$.count"},
-                {"endpoint": "*", "path": "$..updated_at"},
-                {"endpoint": "/admin/orders/*", "path": "$.order.total"},
-            ],
-        })
+        cfg = load_diff_ignore(
+            {
+                "endpoint_ignore": [
+                    {"endpoint": "GET /admin/collections", "path": "$.count"},
+                    {"endpoint": "*", "path": "$..updated_at"},
+                    {"endpoint": "/admin/orders/*", "path": "$.order.total"},
+                ],
+            }
+        )
         assert len(cfg.overrides) == 3
         patterns = [ov[0] for ov in cfg.overrides]
         assert "GET /admin/collections" in patterns
@@ -259,11 +269,14 @@ class TestLoadDiffIgnore:
     def test_endpoint_ignore_path_filters_diff(self):
         """End-to-end: endpoint_ignore rule actually suppresses the diff line."""
         from scout.matcher.compare import compare_pair
-        cfg = load_diff_ignore({
-            "endpoint_ignore": [
-                {"endpoint": "GET /admin/collections", "path": "$.count"},
-            ],
-        })
+
+        cfg = load_diff_ignore(
+            {
+                "endpoint_ignore": [
+                    {"endpoint": "GET /admin/collections", "path": "$.count"},
+                ],
+            }
+        )
         rule = cfg.rule_for("GET", "/admin/collections")
         base = {"status_code": 200, "response_body": '{"count": 1, "items": []}'}
         target = {"status_code": 200, "response_body": '{"count": 0, "items": []}'}
@@ -275,31 +288,56 @@ class TestLoadDiffIgnore:
 
 # -- Integration: compare_pair with ignore --
 
+
 class TestComparePairWithIgnore:
     def test_field_ignore_eliminates_diff(self):
-        base = {"status_code": 200, "response_body": '{"id": 1, "created_at": "2026-01-01", "name": "x"}'}
-        target = {"status_code": 200, "response_body": '{"id": 1, "created_at": "2026-02-01", "name": "x"}'}
+        base = {
+            "status_code": 200,
+            "response_body": '{"id": 1, "created_at": "2026-01-01", "name": "x"}',
+        }
+        target = {
+            "status_code": 200,
+            "response_body": '{"id": 1, "created_at": "2026-02-01", "name": "x"}',
+        }
         rule = IgnoreRule(fields=("created_at",))
         diff = compare_pair(base, target, ignore=rule)
         assert diff.value_match is True
 
     def test_value_type_ignore_eliminates_diff(self):
-        base = {"status_code": 200, "response_body": '{"id": "550e8400-e29b-41d4-a716-446655440000", "name": "x"}'}
-        target = {"status_code": 200, "response_body": '{"id": "660f9500-f30c-52e5-b827-557766551111", "name": "x"}'}
+        base = {
+            "status_code": 200,
+            "response_body": '{"id": "550e8400-e29b-41d4-a716-446655440000", "name": "x"}',
+        }
+        target = {
+            "status_code": 200,
+            "response_body": '{"id": "660f9500-f30c-52e5-b827-557766551111", "name": "x"}',
+        }
         rule = IgnoreRule(value_types=("uuid",))
         diff = compare_pair(base, target, ignore=rule)
         assert diff.value_match is True
 
     def test_mock_name_suppressed(self):
-        base = {"status_code": 200, "response_body": '{"email": "test-abc12345@example.com", "role": "admin"}'}
-        target = {"status_code": 200, "response_body": '{"email": "test-def67890@example.com", "role": "admin"}'}
+        base = {
+            "status_code": 200,
+            "response_body": '{"email": "test-abc12345@example.com", "role": "admin"}',
+        }
+        target = {
+            "status_code": 200,
+            "response_body": '{"email": "test-def67890@example.com", "role": "admin"}',
+        }
         rule = IgnoreRule(value_types=("mock_email",))
         diff = compare_pair(base, target, ignore=rule)
         assert diff.value_match is True
 
     def test_real_diff_still_reported(self):
-        base = {"status_code": 200, "response_body": '{"name": "Alice", "created_at": "2026-01-01"}'}
-        target = {"status_code": 200, "response_body": '{"name": "Bob", "created_at": "2026-02-01"}'}
+        base = {
+            "status_code": 200,
+            "response_body": '{"name": "Alice", "created_at": "2026-01-01"}',
+        }
+        target = {
+            "status_code": 200,
+            "response_body": '{"name": "Bob", "created_at": "2026-02-01"}',
+        }
         rule = IgnoreRule(fields=("created_at",))
         diff = compare_pair(base, target, ignore=rule)
         assert diff.value_match is False
@@ -327,99 +365,121 @@ class TestComparePairWithIgnore:
 
 # -- status_only schema: endpoint form (preferred) + legacy path fallback --
 
+
 class TestStatusOnlySchema:
     def test_endpoint_form_method_match(self) -> None:
         """endpoint='GET /admin/orders' matches GET but not POST."""
-        cfg = load_diff_ignore({
-            "status_only": [
-                {"endpoint": "GET /admin/orders", "scenario": "*", "step_seq": "*"},
-            ]
-        })
+        cfg = load_diff_ignore(
+            {
+                "status_only": [
+                    {"endpoint": "GET /admin/orders", "scenario": "*", "step_seq": "*"},
+                ]
+            }
+        )
         assert cfg.is_status_only("any/scenario", "GET", "/admin/orders", 1) is True
         assert cfg.is_status_only("any/scenario", "POST", "/admin/orders", 1) is False
 
     def test_endpoint_form_wildcard_method(self) -> None:
         """endpoint='* /admin/orders' matches any method."""
-        cfg = load_diff_ignore({
-            "status_only": [
-                {"endpoint": "* /admin/orders", "scenario": "*", "step_seq": "*"},
-            ]
-        })
+        cfg = load_diff_ignore(
+            {
+                "status_only": [
+                    {"endpoint": "* /admin/orders", "scenario": "*", "step_seq": "*"},
+                ]
+            }
+        )
         assert cfg.is_status_only("s", "GET", "/admin/orders", 1) is True
         assert cfg.is_status_only("s", "POST", "/admin/orders", 1) is True
         assert cfg.is_status_only("s", "DELETE", "/admin/orders", 1) is True
 
     def test_legacy_path_form(self) -> None:
         """Legacy entries with `path` (no `endpoint`) match any method."""
-        cfg = load_diff_ignore({
-            "status_only": [
-                {"path": "/admin/orders", "scenario": "*", "step_seq": "*"},
-            ]
-        })
+        cfg = load_diff_ignore(
+            {
+                "status_only": [
+                    {"path": "/admin/orders", "scenario": "*", "step_seq": "*"},
+                ]
+            }
+        )
         assert cfg.is_status_only("s", "GET", "/admin/orders", 1) is True
         assert cfg.is_status_only("s", "POST", "/admin/orders", 1) is True
 
     def test_endpoint_form_with_path_glob(self) -> None:
         """endpoint='POST /admin/orders/*' matches POST + ID path."""
-        cfg = load_diff_ignore({
-            "status_only": [
-                {"endpoint": "POST /admin/orders/*", "scenario": "*", "step_seq": "*"},
-            ]
-        })
+        cfg = load_diff_ignore(
+            {
+                "status_only": [
+                    {"endpoint": "POST /admin/orders/*", "scenario": "*", "step_seq": "*"},
+                ]
+            }
+        )
         assert cfg.is_status_only("s", "POST", "/admin/orders/order_01HA", 1) is True
         assert cfg.is_status_only("s", "POST", "/admin/orders", 1) is False
-        assert cfg.is_status_only("s", "GET",  "/admin/orders/order_01HA", 1) is False
+        assert cfg.is_status_only("s", "GET", "/admin/orders/order_01HA", 1) is False
 
     def test_endpoint_id_segments_auto_templatized(self) -> None:
         """Concrete IDs in endpoint path get auto-replaced with '*' on load,
         matching the same behavior as the legacy `path` form."""
-        cfg = load_diff_ignore({
-            "status_only": [
-                {"endpoint": "DELETE /admin/api-keys/apk_01ABC", "scenario": "*", "step_seq": "*"},
-            ]
-        })
+        cfg = load_diff_ignore(
+            {
+                "status_only": [
+                    {
+                        "endpoint": "DELETE /admin/api-keys/apk_01ABC",
+                        "scenario": "*",
+                        "step_seq": "*",
+                    },
+                ]
+            }
+        )
         # The concrete apk_01ABC should match any apk_* via templatization
         assert cfg.is_status_only("s", "DELETE", "/admin/api-keys/apk_99XYZ", 1) is True
         assert cfg.is_status_only("s", "DELETE", "/admin/api-keys", 1) is False
 
     def test_mixed_legacy_and_new_form(self) -> None:
         """Both forms can coexist in the same config."""
-        cfg = load_diff_ignore({
-            "status_only": [
-                {"endpoint": "GET /admin/orders", "scenario": "*", "step_seq": "*"},
-                {"path": "/admin/api-keys", "scenario": "*", "step_seq": "*"},
-            ]
-        })
+        cfg = load_diff_ignore(
+            {
+                "status_only": [
+                    {"endpoint": "GET /admin/orders", "scenario": "*", "step_seq": "*"},
+                    {"path": "/admin/api-keys", "scenario": "*", "step_seq": "*"},
+                ]
+            }
+        )
         assert cfg.is_status_only("s", "GET", "/admin/orders", 1) is True
         assert cfg.is_status_only("s", "POST", "/admin/orders", 1) is False  # method-locked
         assert cfg.is_status_only("s", "POST", "/admin/api-keys", 1) is True  # legacy = any method
 
     def test_method_case_insensitive(self) -> None:
         """Method matching is case-insensitive."""
-        cfg = load_diff_ignore({
-            "status_only": [{"endpoint": "get /admin/orders", "scenario": "*", "step_seq": "*"}]
-        })
+        cfg = load_diff_ignore(
+            {"status_only": [{"endpoint": "get /admin/orders", "scenario": "*", "step_seq": "*"}]}
+        )
         assert cfg.is_status_only("s", "GET", "/admin/orders", 1) is True
         assert cfg.is_status_only("s", "get", "/admin/orders", 1) is True
 
     def test_step_seq_still_filters(self) -> None:
         """step_seq narrowing still works alongside method filtering."""
-        cfg = load_diff_ignore({
-            "status_only": [
-                {"endpoint": "GET /admin/orders", "scenario": "*", "step_seq": "3"},
-            ]
-        })
+        cfg = load_diff_ignore(
+            {
+                "status_only": [
+                    {"endpoint": "GET /admin/orders", "scenario": "*", "step_seq": "3"},
+                ]
+            }
+        )
         assert cfg.is_status_only("s", "GET", "/admin/orders", 3) is True
         assert cfg.is_status_only("s", "GET", "/admin/orders", 4) is False
 
 
 # -- header_ignore: extending the built-in DEFAULT_HEADER_IGNORE --
 
+
 class TestHeaderIgnoreSchema:
     def test_loads_header_ignore_array(self) -> None:
-        cfg = load_diff_ignore({
-            "header_ignore": ["Access-Control-Allow-Origin", "X-Custom-Trace"],
-        })
+        cfg = load_diff_ignore(
+            {
+                "header_ignore": ["Access-Control-Allow-Origin", "X-Custom-Trace"],
+            }
+        )
         # Lowercased on load for case-insensitive comparison
         assert "access-control-allow-origin" in cfg.header_ignore
         assert "x-custom-trace" in cfg.header_ignore
@@ -431,21 +491,26 @@ class TestHeaderIgnoreSchema:
         """compare_pair with header_ignore=('access-control-allow-origin',)
         should not produce a header_diff for that header even when it differs."""
         import json as _json
+
         baseline = {
             "status_code": 200,
-            "response_body": '{}',
-            "response_headers": _json.dumps({
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "http://localhost:19000",
-            }),
+            "response_body": "{}",
+            "response_headers": _json.dumps(
+                {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "http://localhost:19000",
+                }
+            ),
         }
         target = {
             "status_code": 200,
-            "response_body": '{}',
-            "response_headers": _json.dumps({
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "http://localhost:29000",
-            }),
+            "response_body": "{}",
+            "response_headers": _json.dumps(
+                {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "http://localhost:29000",
+                }
+            ),
         }
         # Without ignore: header_diff surfaces the change
         d1 = compare_pair(baseline, target)
@@ -460,21 +525,26 @@ class TestHeaderIgnoreSchema:
         """Built-in DEFAULT_HEADER_IGNORE (Date, ETag, X-Request-ID, etc.) keeps
         working when extra_ignore is empty."""
         import json as _json
+
         baseline = {
             "status_code": 200,
-            "response_body": '{}',
-            "response_headers": _json.dumps({
-                "Date": "Mon, 11 May 2026 00:00:00 GMT",
-                "X-Request-ID": "abc123",
-            }),
+            "response_body": "{}",
+            "response_headers": _json.dumps(
+                {
+                    "Date": "Mon, 11 May 2026 00:00:00 GMT",
+                    "X-Request-ID": "abc123",
+                }
+            ),
         }
         target = {
             "status_code": 200,
-            "response_body": '{}',
-            "response_headers": _json.dumps({
-                "Date": "Mon, 11 May 2026 00:00:01 GMT",
-                "X-Request-ID": "xyz999",
-            }),
+            "response_body": "{}",
+            "response_headers": _json.dumps(
+                {
+                    "Date": "Mon, 11 May 2026 00:00:01 GMT",
+                    "X-Request-ID": "xyz999",
+                }
+            ),
         }
         d = compare_pair(baseline, target)
         assert d.header_match is True
@@ -483,17 +553,24 @@ class TestHeaderIgnoreSchema:
 
 # -- known_changes path syntax: [*] xpath-style AND [] jsonpath-style both valid --
 
+
 class TestKnownChangeArrayWildcard:
     def test_xpath_star_wildcard_matches_concrete_index(self) -> None:
         """[*] wildcard already worked — keep regression coverage."""
-        from scout.matcher.noise import filter_known_changes, KnownChange
-        kc = (KnownChange(
-            endpoint="GET /admin/collections",
-            path="$.collections[*].external_id",
-            change="added", since="2.14.0",
-        ),)
+        from scout.matcher.noise import KnownChange, filter_known_changes
+
+        kc = (
+            KnownChange(
+                endpoint="GET /admin/collections",
+                path="$.collections[*].external_id",
+                change="added",
+                since="2.14.0",
+            ),
+        )
         diff = "+ $.collections[0].external_id: null"
-        result = filter_known_changes(diff, kc, "2.14.0", method="GET", api_path="/admin/collections")
+        result = filter_known_changes(
+            diff, kc, "2.14.0", method="GET", api_path="/admin/collections"
+        )
         assert result == ""
 
     def test_rule_with_star_matches_diff_with_empty_brackets(self) -> None:
@@ -504,48 +581,70 @@ class TestKnownChangeArrayWildcard:
         write rules with ``[*]``. They denote the same thing — any element
         of the array — and the filter must accept both bracket forms.
         """
-        from scout.matcher.noise import filter_known_changes, KnownChange
-        kc = (KnownChange(
-            endpoint="GET /admin/collections",
-            path="$.collections[*].external_id",
-            change="added", since="2.14.0",
-        ),)
+        from scout.matcher.noise import KnownChange, filter_known_changes
+
+        kc = (
+            KnownChange(
+                endpoint="GET /admin/collections",
+                path="$.collections[*].external_id",
+                change="added",
+                since="2.14.0",
+            ),
+        )
         diff = "+ $.collections[].external_id: null"
-        result = filter_known_changes(diff, kc, "2.14.0", method="GET", api_path="/admin/collections")
+        result = filter_known_changes(
+            diff, kc, "2.14.0", method="GET", api_path="/admin/collections"
+        )
         assert result == ""
 
     def test_jsonpath_empty_brackets_also_match(self) -> None:
         """[] (jsonpath shorthand for any index) should be equivalent to [*]."""
-        from scout.matcher.noise import filter_known_changes, KnownChange
-        kc = (KnownChange(
-            endpoint="GET /admin/collections",
-            path="$.collections[].external_id",
-            change="added", since="2.14.0",
-        ),)
+        from scout.matcher.noise import KnownChange, filter_known_changes
+
+        kc = (
+            KnownChange(
+                endpoint="GET /admin/collections",
+                path="$.collections[].external_id",
+                change="added",
+                since="2.14.0",
+            ),
+        )
         diff = "+ $.collections[0].external_id: null"
-        result = filter_known_changes(diff, kc, "2.14.0", method="GET", api_path="/admin/collections")
+        result = filter_known_changes(
+            diff, kc, "2.14.0", method="GET", api_path="/admin/collections"
+        )
         assert result == ""
 
     def test_mixed_wildcards_both_match(self) -> None:
         """Path with both [*] and [] should normalize uniformly."""
-        from scout.matcher.noise import filter_known_changes, KnownChange
-        kc = (KnownChange(
-            endpoint="GET /admin/orders",
-            path="$.orders[].items[*].sku",
-            change="added", since="2.14.0",
-        ),)
+        from scout.matcher.noise import KnownChange, filter_known_changes
+
+        kc = (
+            KnownChange(
+                endpoint="GET /admin/orders",
+                path="$.orders[].items[*].sku",
+                change="added",
+                since="2.14.0",
+            ),
+        )
         diff = "+ $.orders[2].items[5].sku: string"
         result = filter_known_changes(diff, kc, "2.14.0", method="GET", api_path="/admin/orders")
         assert result == ""
 
     def test_concrete_index_doesnt_match_other_indices(self) -> None:
         """A rule with a literal [0] should NOT silence [1]. Wildcards are explicit."""
-        from scout.matcher.noise import filter_known_changes, KnownChange
-        kc = (KnownChange(
-            endpoint="GET /admin/collections",
-            path="$.collections[0].external_id",
-            change="added", since="2.14.0",
-        ),)
+        from scout.matcher.noise import KnownChange, filter_known_changes
+
+        kc = (
+            KnownChange(
+                endpoint="GET /admin/collections",
+                path="$.collections[0].external_id",
+                change="added",
+                since="2.14.0",
+            ),
+        )
         diff = "+ $.collections[1].external_id: null"
-        result = filter_known_changes(diff, kc, "2.14.0", method="GET", api_path="/admin/collections")
+        result = filter_known_changes(
+            diff, kc, "2.14.0", method="GET", api_path="/admin/collections"
+        )
         assert result == diff  # not silenced

@@ -20,7 +20,9 @@ class RecordingAddon:
 
     def __init__(self, control: ControlServer) -> None:
         self._control = control
-        self._pending: dict[str, tuple[float, str | None, int | None]] = {}  # flow_id → (start_time, scenario, step_seq)
+        self._pending: dict[
+            str, tuple[float, str | None, int | None]
+        ] = {}  # flow_id → (start_time, scenario, step_seq)
 
     def request(self, flow: http.HTTPFlow) -> None:
         # Extract and strip session header before forwarding

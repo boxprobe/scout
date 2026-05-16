@@ -28,7 +28,9 @@ def test_start_and_stop_session(db: RecordingDB) -> None:
 def test_insert_api_record(db: RecordingDB) -> None:
     sid = db.start_session("run-001", "auth/login")
     db.insert_api_record(
-        scenario_id=sid, method="POST", url="http://localhost:9000/admin/auth",
+        scenario_id=sid,
+        method="POST",
+        url="http://localhost:9000/admin/auth",
         request_headers='{"Content-Type":"application/json"}',
         request_body='{"email":"test@test.com"}',
         status_code=200,

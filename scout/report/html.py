@@ -32,9 +32,9 @@ def generate_html(
         duration = f"{result.duration_ms:,}ms"
         rows.append(
             f'<tr><td style="color:#666">{idx}</td>'
-            f'<td>{display_name}</td>'
+            f"<td>{display_name}</td>"
             f'<td style="color:{color};font-weight:600">{status}</td>'
-            f'<td>{duration}</td>'
+            f"<td>{duration}</td>"
             f'<td style="font-size:12px;color:#888">{errors}</td></tr>'
         )
 
@@ -56,7 +56,7 @@ def generate_html(
 </style>
 </head>
 <body>
-<h1>Scout Report{' — ' + app_name if app_name else ''}</h1>
+<h1>Scout Report{" — " + app_name if app_name else ""}</h1>
 <div class="summary">
   <span>Run: {run_id}</span>
   <span style="color:#4ade80">{passed} passed</span>

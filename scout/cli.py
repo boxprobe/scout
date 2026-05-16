@@ -6,12 +6,11 @@ import asyncio
 import time
 import uuid
 from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 import click
 import httpx
-
-from importlib.metadata import PackageNotFoundError, version
 
 from scout.config import load_app_config, override_urls
 from scout.git import git_info
@@ -61,12 +60,24 @@ def main() -> None:
 @click.option("--out", "out_dir", default=None, type=click.Path(), help="Output directory.")
 @click.option("--web-base-url", default=None, help="Override web_base_url from app.json.")
 @click.option("--api-base-url", default=None, help="Override api_base_url from app.json.")
-@click.option("--web-version", required=True, help="Web app version label (e.g. 2.14.0). Required — used to tag the recording so the diff report header and 'Added in <ver>' known-change buttons can identify which deployed version produced each side.")
+@click.option(
+    "--web-version",
+    required=True,
+    help=(
+        "Web app version label (e.g. 2.14.0). Required — used to tag the recording "
+        "so the diff report header and 'Added in <ver>' known-change buttons can "
+        "identify which deployed version produced each side."
+    ),
+)
 @click.option("--api-version", default=None, help="API version label (defaults to --web-version).")
 @click.option("--web-commit", default=None, help="Web app commit hash.")
 @click.option("--api-commit", default=None, help="API commit hash (defaults to --web-commit).")
-@click.option("--concurrency", default=10, type=click.IntRange(1, 50),
-              help="Max parallel scenarios (default: 10, max: 50).")
+@click.option(
+    "--concurrency",
+    default=10,
+    type=click.IntRange(1, 50),
+    help="Max parallel scenarios (default: 10, max: 50).",
+)
 def run(
     paths: tuple[str, ...],
     headless: bool,
@@ -104,7 +115,7 @@ def run(
         proxy_proc.start()
     except RuntimeError:
         click.echo("Error: failed to start recording proxy", err=True)
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     proxy = proxy_proc.proxy_addr
     control_base = proxy_proc.control_base
@@ -117,6 +128,7 @@ def run(
         steps_file = scenario_dir / "steps.json"
         if steps_file.exists():
             import json
+
             steps_data = json.loads(steps_file.read_text(encoding="utf-8"))
 
         async with httpx.AsyncClient() as client:
@@ -172,19 +184,25 @@ def run(
     from scout.report.junit import generate_junit
 
     generate_junit(results, runs_dir / "junit.xml", run_id=run_id)
-    generate_html(results, runs_dir / "report.html", run_id=run_id, app_name=config.name,
-                  wall_ms=wall_ms)
+    generate_html(
+        results, runs_dir / "report.html", run_id=run_id, app_name=config.name, wall_ms=wall_ms
+    )
 
     # Record to index
     from scout.index import IndexDB
     from scout.run_metadata import RunMetadata, build_metadata
 
     index = IndexDB(repo_root / ".scout" / "index.db")
-    for scenario_path, result in results.items():
+    for scenario_path, _result in results.items():
         meta = build_metadata(
-            config=config, git=git, scenario=scenario_path, env=env_name,
-            web_version=web_version, api_version=api_version,
-            web_commit=web_commit, api_commit=api_commit,
+            config=config,
+            git=git,
+            scenario=scenario_path,
+            env=env_name,
+            web_version=web_version,
+            api_version=api_version,
+            web_commit=web_commit,
+            api_commit=api_commit,
         )
         # Override run_id to use our batch run_id
         meta = RunMetadata(
@@ -225,7 +243,8 @@ def run(
 @click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
 @click.option("--headless/--headed", default=True, help="Run headless (default) or headed.")
 @click.option(
-    "--screenshots/--no-screenshots", default=True,
+    "--screenshots/--no-screenshots",
+    default=True,
     help="Take before/after screenshots (default: yes).",
 )
 @click.option("--out", "out_dir", default=None, type=click.Path(), help="Output directory.")
@@ -275,7 +294,8 @@ def verify(
 
     config = load_app_config(repo_root)
     generate_verify_html(
-        results, results_dir / "report.html",
+        results,
+        results_dir / "report.html",
         results_dir=results_dir,
         app_name=config.name,
         wall_ms=wall_ms,
@@ -294,7 +314,6 @@ def verify(
     click.echo(f"Report: {results_dir / 'report.html'}")
     if failed > 0:
         raise SystemExit(1)
-
 
 
 @main.command()
@@ -319,8 +338,9 @@ def runs(
         return
 
     db = IndexDB(index_path)
-    rows = db.query(app=app, scenario=scenario, web_version=web_version,
-                    api_version=api_version, env=env_name)
+    rows = db.query(
+        app=app, scenario=scenario, web_version=web_version, api_version=api_version, env=env_name
+    )
     db.close()
 
     if not rows:
@@ -359,13 +379,19 @@ def analyze() -> None:
 @main.command()
 @click.argument("baseline", required=True)
 @click.argument("target", required=True)
-@click.option("--detail/--no-detail", default=True, help="Include raw request/response data in diff (default: enabled, needed for popup body display).")
+@click.option(
+    "--detail/--no-detail",
+    default=True,
+    help=(
+        "Include raw request/response data in diff "
+        "(default: enabled, needed for popup body display)."
+    ),
+)
 def diff(baseline: str, target: str, detail: bool) -> None:
     """Compare API recordings between two runs."""
     from urllib.parse import urlparse
 
     from scout.collector.db import RecordingDB
-    from scout.config import load_app_config
     from scout.matcher.align import align_records
     from scout.matcher.compare import compare_pair
     from scout.matcher.diff_db import DiffDB
@@ -377,6 +403,7 @@ def diff(baseline: str, target: str, detail: bool) -> None:
 
     # Load diff_ignore from diff_ignore.json (separate from app.json)
     from scout.config import load_diff_ignore_config
+
     diff_ignore_cfg = load_diff_ignore_config(repo_root)
 
     # Find record.db files
@@ -441,7 +468,9 @@ def diff(baseline: str, target: str, detail: bool) -> None:
         }
 
     def _normalize_dynamic_ids(
-        rec: dict, dyn_pairs: list[tuple[str, str]], side: str,
+        rec: dict,
+        dyn_pairs: list[tuple[str, str]],
+        side: str,
     ) -> dict:
         """Substitute dynamic path segments in request/response bodies with stable
         placeholders, so paired records that differ only by path-derived IDs compare
@@ -476,17 +505,19 @@ def diff(baseline: str, target: str, detail: bool) -> None:
 
     def _build_offset_map(rdb: RecordingDB, session_id: int) -> dict[int, int]:
         """Build record_id → offset_ms from scenario's first record."""
-        from datetime import datetime as _dt, timezone as _tz
+        from datetime import datetime as _dt
+
         records = rdb.get_api_records(session_id)
         if not records:
             return {}
+
         # Parse all timestamps, find earliest
         def _parse(ts: str) -> _dt:
             return _dt.fromisoformat(ts)
+
         t0 = _parse(records[0]["timestamp"])
         return {
-            r["id"]: int((_parse(r["timestamp"]) - t0).total_seconds() * 1000)
-            for r in records
+            r["id"]: int((_parse(r["timestamp"]) - t0).total_seconds() * 1000) for r in records
         }
 
     # Process each scenario present in either run
@@ -513,7 +544,9 @@ def diff(baseline: str, target: str, detail: bool) -> None:
                     step_label = step_labels.get(step_seq) if step_seq else None
 
                     # status_only: skip structure/value diff for matching rules
-                    if diff_ignore_cfg.is_status_only(scenario_name, pair.method, pair.path, step_seq):
+                    if diff_ignore_cfg.is_status_only(
+                        scenario_name, pair.method, pair.path, step_seq
+                    ):
                         b_status = pair.baseline.get("status_code")
                         t_status = pair.target.get("status_code")
                         result_status_match = b_status == t_status
@@ -555,14 +588,16 @@ def diff(baseline: str, target: str, detail: bool) -> None:
                     # pair are by definition the dynamic parts.
                     b_parsed = urlparse(pair.baseline.get("url") or "")
                     t_parsed = urlparse(pair.target.get("url") or "")
-                    dyn_pairs = (
-                        extract_dynamic_pairs(b_parsed.path, t_parsed.path)
-                        + extract_query_dynamic_pairs(b_parsed.query, t_parsed.query)
+                    dyn_pairs = extract_dynamic_pairs(
+                        b_parsed.path, t_parsed.path
+                    ) + extract_query_dynamic_pairs(b_parsed.query, t_parsed.query)
+                    baseline_for_compare = _normalize_dynamic_ids(
+                        pair.baseline, dyn_pairs, "baseline"
                     )
-                    baseline_for_compare = _normalize_dynamic_ids(pair.baseline, dyn_pairs, "baseline")
                     target_for_compare = _normalize_dynamic_ids(pair.target, dyn_pairs, "target")
                     result = compare_pair(
-                        baseline_for_compare, target_for_compare,
+                        baseline_for_compare,
+                        target_for_compare,
                         ignore=ignore_rule,
                         known_changes=diff_ignore_cfg.known_changes,
                         target_version=target_ver,
@@ -650,6 +685,7 @@ def diff(baseline: str, target: str, detail: bool) -> None:
         elif base_s:
             # Scenario only in baseline — every endpoint becomes a baseline-only row
             from scout.matcher.normalize import normalize_url
+
             for rec in base_rdb.get_api_records(base_s["id"]):
                 b_id = rec.get("id")
                 ddb.insert_endpoint_diff(
@@ -675,6 +711,9 @@ def diff(baseline: str, target: str, detail: bool) -> None:
         else:
             # Scenario only in target — every endpoint becomes a target-only row
             from scout.matcher.normalize import normalize_url
+
+            if target_s is None:
+                raise RuntimeError("target_s should be non-None in else branch")
             for rec in target_rdb.get_api_records(target_s["id"]):
                 t_id = rec.get("id")
                 ddb.insert_endpoint_diff(
@@ -709,22 +748,31 @@ def diff(baseline: str, target: str, detail: bool) -> None:
 
     # Read raw diff_ignore.json for embedding in report
     import json as _json
+
     di_path = repo_root / "diff_ignore.json"
     di_raw = _json.loads(di_path.read_text(encoding="utf-8")) if di_path.exists() else {}
-    generate_diff_html(meta, diffs, summary, diff_dir / "report.html",
-                       diff_ignore=di_raw, repo_root=repo_root)
+    generate_diff_html(
+        meta, diffs, summary, diff_dir / "report.html", diff_ignore=di_raw, repo_root=repo_root
+    )
 
     # Print summary
-    has_issues = summary["status_mismatches"] + summary["structure_mismatches"] + summary["missing_endpoints"]
+    has_issues = (
+        summary["status_mismatches"]
+        + summary["structure_mismatches"]
+        + summary["missing_endpoints"]
+    )
     value_changes = summary.get("value_mismatches", 0)
     if has_issues:
-        click.echo(f"REGRESSION: {summary['status_mismatches']} status, "
-                    f"{summary['structure_mismatches']} structure, "
-                    f"{value_changes} value, "
-                    f"{summary['missing_endpoints']} endpoint changes")
+        click.echo(
+            f"REGRESSION: {summary['status_mismatches']} status, "
+            f"{summary['structure_mismatches']} structure, "
+            f"{value_changes} value, "
+            f"{summary['missing_endpoints']} endpoint changes"
+        )
     elif value_changes:
-        click.echo(f"SCHEMA_OK: {summary['total_paired']} endpoints, "
-                    f"{value_changes} value changes")
+        click.echo(
+            f"SCHEMA_OK: {summary['total_paired']} endpoints, {value_changes} value changes"
+        )
     else:
         click.echo(f"OK: {summary['total_paired']} endpoints compared, no regression")
 

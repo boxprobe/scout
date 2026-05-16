@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / general discussion
+    url: https://github.com/boxprobe/scout/discussions
+    about: For questions about usage, design decisions, or open-ended discussion — please use Discussions instead of Issues.
+  - name: Security issues
+    url: mailto:contact@boxprobe.com
+    about: Please report security issues privately by email, not via public Issues.

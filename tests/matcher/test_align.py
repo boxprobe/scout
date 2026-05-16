@@ -1,11 +1,17 @@
 """Tests for matcher/align.py — endpoint sequence alignment."""
 
-from scout.matcher.align import align_records, AlignedPair
+from scout.matcher.align import align_records
 
 
 def _rec(method: str, url: str, status: int = 200, timestamp: str = "") -> dict:
     """Minimal record dict for testing."""
-    return {"method": method, "url": url, "status_code": status, "response_body": None, "timestamp": timestamp}
+    return {
+        "method": method,
+        "url": url,
+        "status_code": status,
+        "response_body": None,
+        "timestamp": timestamp,
+    }
 
 
 def test_identical_sequences() -> None:
@@ -144,8 +150,18 @@ def test_short_dynamic_value_in_query_still_pairs() -> None:
     different APIs. Structural matching on query KEYS only — values get
     compared later as content, not as identity — fixes this.
     """
-    base = [_rec("GET", "http://h/admin/api-keys?limit=20&offset=0&q=test-1a64e3&type=publishable&fields=id,title")]
-    target = [_rec("GET", "http://h/admin/api-keys?limit=20&offset=0&q=test-726260&type=publishable&fields=id,title")]
+    base = [
+        _rec(
+            "GET",
+            "http://h/admin/api-keys?limit=20&offset=0&q=test-1a64e3&type=publishable&fields=id,title",
+        )
+    ]
+    target = [
+        _rec(
+            "GET",
+            "http://h/admin/api-keys?limit=20&offset=0&q=test-726260&type=publishable&fields=id,title",
+        )
+    ]
     result = align_records(base, target)
     paired = [p for p in result if p.baseline and p.target]
     assert len(paired) == 1
@@ -158,8 +174,18 @@ def test_dynamic_id_in_query_value_still_pairs() -> None:
     different apk_id and the resulting `?publishable_key_id=apk_…` URLs
     were treated as separate APIs by exact-query matching.
     """
-    base = [_rec("GET", "http://h/admin/sales-channels?limit=10&offset=0&publishable_key_id=apk_01KRJQZKQXYQ6VZZP0F8738Y8S")]
-    target = [_rec("GET", "http://h/admin/sales-channels?limit=10&offset=0&publishable_key_id=apk_01KRJR6BPMZSWTBVA0VQT0VV25")]
+    base = [
+        _rec(
+            "GET",
+            "http://h/admin/sales-channels?limit=10&offset=0&publishable_key_id=apk_01KRJQZKQXYQ6VZZP0F8738Y8S",
+        )
+    ]
+    target = [
+        _rec(
+            "GET",
+            "http://h/admin/sales-channels?limit=10&offset=0&publishable_key_id=apk_01KRJR6BPMZSWTBVA0VQT0VV25",
+        )
+    ]
     result = align_records(base, target)
     paired = [p for p in result if p.baseline and p.target]
     assert len(paired) == 1
@@ -167,8 +193,18 @@ def test_dynamic_id_in_query_value_still_pairs() -> None:
 
 def test_extra_query_key_still_pairs_via_stage2() -> None:
     """Extra query key on target — same path → still pair, query diff surfaced later."""
-    base = [_rec("GET", "http://h/admin/sales-channels?limit=10&offset=0&publishable_key_id=apk_01KRJQZKQXYQ6VZZP0F8738Y8S")]
-    target = [_rec("GET", "http://h/admin/sales-channels?limit=10&offset=0&publishable_key_id=apk_01KRJR6BPMZSWTBVA0VQT0VV25&extra=foo")]
+    base = [
+        _rec(
+            "GET",
+            "http://h/admin/sales-channels?limit=10&offset=0&publishable_key_id=apk_01KRJQZKQXYQ6VZZP0F8738Y8S",
+        )
+    ]
+    target = [
+        _rec(
+            "GET",
+            "http://h/admin/sales-channels?limit=10&offset=0&publishable_key_id=apk_01KRJR6BPMZSWTBVA0VQT0VV25&extra=foo",
+        )
+    ]
     result = align_records(base, target)
     paired = [p for p in result if p.baseline and p.target]
     assert len(paired) == 1

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from urllib.parse import unquote, urlparse
 
 
@@ -11,8 +12,6 @@ def normalize_url(url: str) -> str:
     path = parsed.path.rstrip("/")
     return path or "/"
 
-
-import re
 
 _ID_RE = re.compile(
     r"""
@@ -48,7 +47,7 @@ def paths_match(path_a: str, path_b: str) -> bool:
     literal_match = 0
     structural_conflict = False  # a segment pair where neither side is an ID and they differ
 
-    for a, b in zip(segs_a, segs_b):
+    for a, b in zip(segs_a, segs_b, strict=True):
         if a == b:
             literal_match += 1
         elif _is_id_segment(a) or _is_id_segment(b):
@@ -155,7 +154,7 @@ def extract_dynamic_pairs(path_a: str, path_b: str) -> list[tuple[str, str]]:
     if len(segs_a) != len(segs_b):
         return []
     pairs: list[tuple[str, str]] = []
-    for a, b in zip(segs_a, segs_b):
+    for a, b in zip(segs_a, segs_b, strict=True):
         if a != b and (_is_id_segment(a) or _is_id_segment(b)):
             pairs.append((a, b))
     return pairs

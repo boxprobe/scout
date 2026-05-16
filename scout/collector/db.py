@@ -81,10 +81,23 @@ class RecordingDB:
                (run_id, scenario, app, web_version, api_version, env, web_commit, api_commit,
                 scenario_commit, scout_version, started_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (run_id, scenario, app, web_version, api_version, env, web_commit, api_commit,
-             scenario_commit, scout_version, datetime.now(UTC).isoformat()),
+            (
+                run_id,
+                scenario,
+                app,
+                web_version,
+                api_version,
+                env,
+                web_commit,
+                api_commit,
+                scenario_commit,
+                scout_version,
+                datetime.now(UTC).isoformat(),
+            ),
         )
         self._conn.commit()
+        if cursor.lastrowid is None:
+            raise RuntimeError("INSERT into scenarios did not produce a row ID")
         return cursor.lastrowid
 
     def insert_steps(self, scenario_id: int, steps: list[dict[str, Any]]) -> None:
@@ -94,8 +107,14 @@ class RecordingDB:
                 """INSERT OR IGNORE INTO steps
                    (scenario_id, seq, action, element_name, page_url, input_value)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                (scenario_id, s["seq"], s["action"], s.get("element_name"),
-                 s.get("page_url"), s.get("input_value")),
+                (
+                    scenario_id,
+                    s["seq"],
+                    s["action"],
+                    s.get("element_name"),
+                    s.get("page_url"),
+                    s.get("input_value"),
+                ),
             )
         self._conn.commit()
 
@@ -115,9 +134,7 @@ class RecordingDB:
         self._conn.commit()
 
     def get_session(self, scenario_id: int) -> dict[str, Any]:
-        row = self._conn.execute(
-            "SELECT * FROM scenarios WHERE id = ?", (scenario_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM scenarios WHERE id = ?", (scenario_id,)).fetchone()
         return dict(row)
 
     def get_all_sessions(self) -> list[dict[str, Any]]:
@@ -143,9 +160,19 @@ class RecordingDB:
                (scenario_id, step_seq, timestamp, method, url, request_headers, request_body,
                 status_code, response_headers, response_body, duration_ms)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (scenario_id, step_seq, datetime.now(UTC).isoformat(), method, url,
-             request_headers, request_body, status_code, response_headers,
-             response_body, duration_ms),
+            (
+                scenario_id,
+                step_seq,
+                datetime.now(UTC).isoformat(),
+                method,
+                url,
+                request_headers,
+                request_body,
+                status_code,
+                response_headers,
+                response_body,
+                duration_ms,
+            ),
         )
         self._conn.commit()
 

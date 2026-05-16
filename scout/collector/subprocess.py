@@ -6,19 +6,16 @@ import asyncio
 import multiprocessing
 import time
 from ctypes import c_int
-from typing import TYPE_CHECKING
+from multiprocessing.sharedctypes import Synchronized
 
 import httpx
-
-if TYPE_CHECKING:
-    pass
 
 
 def _run_proxy(
     proxy_port: int,
     control_port: int,
-    shared_proxy_port: multiprocessing.Value,
-    shared_control_port: multiprocessing.Value,
+    shared_proxy_port: Synchronized,
+    shared_control_port: Synchronized,
 ) -> None:
     """Entry point for the proxy child process."""
 
@@ -33,7 +30,7 @@ def _run_proxy(
         from mitmproxy.options import Options
         from mitmproxy.tools.dump import DumpMaster
 
-        opts = Options(listen_host="0.0.0.0", listen_port=proxy_port)
+        opts = Options(listen_host="0.0.0.0", listen_port=proxy_port)  # noqa: S104  intentional: proxy must accept connections from spawned browsers
         master = DumpMaster(opts)
         master.addons.add(RecordingAddon(control))
         master.addons.add(_PortReporter(shared_proxy_port))
@@ -49,7 +46,7 @@ def _run_proxy(
 class _PortReporter:
     """Mitmproxy addon that writes resolved listen port to shared memory."""
 
-    def __init__(self, shared_port: multiprocessing.Value) -> None:
+    def __init__(self, shared_port: Synchronized) -> None:
         self._shared_port = shared_port
 
     def running(self) -> None:
@@ -68,8 +65,8 @@ class ProxyProcess:
     def __init__(self, proxy_port: int = 0, control_port: int = 0) -> None:
         self._requested_proxy_port = proxy_port
         self._requested_control_port = control_port
-        self._shared_proxy_port: multiprocessing.Value = multiprocessing.Value(c_int, 0)
-        self._shared_control_port: multiprocessing.Value = multiprocessing.Value(c_int, 0)
+        self._shared_proxy_port = multiprocessing.Value(c_int, 0)
+        self._shared_control_port = multiprocessing.Value(c_int, 0)
         self._process: multiprocessing.Process | None = None
 
     @property
@@ -104,12 +101,10 @@ class ProxyProcess:
             proxy_port = self._shared_proxy_port.value
             if control_port and not control_ready:
                 try:
-                    resp = httpx.get(
-                        f"http://127.0.0.1:{control_port}/session/status", timeout=1
-                    )
+                    resp = httpx.get(f"http://127.0.0.1:{control_port}/session/status", timeout=1)
                     if resp.status_code == 200:
                         control_ready = True
-                except Exception:
+                except Exception:  # noqa: S110  control endpoint not ready yet — keep polling until deadline
                     pass
             if control_ready and proxy_port:
                 return

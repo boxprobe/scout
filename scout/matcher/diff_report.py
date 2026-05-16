@@ -9,15 +9,11 @@ Generates a self-contained HTML file with:
 
 from __future__ import annotations
 
+import html as _html
+import json as _json
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
-
-from scout.matcher.noise import DiffIgnoreConfig, load_diff_ignore
-
-
-import html as _html
-import json as _json
 
 
 def _esc(s: str) -> str:
@@ -36,6 +32,7 @@ def _query_key_set_from_url(url: str | None) -> set[str]:
     from urllib.parse import urlparse
 
     from scout.matcher.normalize import query_key_set
+
     return set(query_key_set(urlparse(url).query))
 
 
@@ -52,6 +49,7 @@ def _query_diff_html(baseline_url: str | None, target_url: str | None) -> str:
     t_keys = _query_key_set_from_url(target_url)
     if b_keys == t_keys:
         return ""
+
     # Strip the redundant `key=` prefix when there's only one parameter
     # name involved — for the common ``fields=a,b,c`` case the user only
     # cares about the list items, not the parent key.
@@ -99,7 +97,6 @@ def generate_diff_html(
 
     has_detail = any(d.get("baseline_url") for d in diffs)
     di_json = _json.dumps(diff_ignore or {}, ensure_ascii=False)
-    di_cfg = load_diff_ignore(diff_ignore) if diff_ignore else DiffIgnoreConfig()
     canonical_path = str((repo_root / "diff_ignore.json").resolve()) if repo_root else ""
     canonical_json = _json.dumps(canonical_path)
 
@@ -121,7 +118,7 @@ def generate_diff_html(
         # Render the raw comparison result. SO-suppression is applied in JS at view time
         # so popup toggles update the row immediately without a re-run.
         if is_missing:
-            status_icon = "+" if baseline_missing else "−"
+            status_icon = "+" if baseline_missing else "−"  # noqa: RUF001  display char
             status_color = "#facc15" if baseline_missing else "#ef4444"
             struct_icon = "—"
             struct_color = "#666"
@@ -137,7 +134,6 @@ def generate_diff_html(
         detail = d.get("diff_summary", "") or ""
         val_diff = d.get("value_diff", "") or ""
 
-        has_diff_content = bool(detail or val_diff)
         diff_count = val_diff.count("\n") + 1 if val_diff else 0
 
         b_status = d.get("baseline_status", "")
@@ -187,22 +183,24 @@ def generate_diff_html(
             # side that has a record but an empty body. The popup's gate
             # condition checks `!== null && !== undefined` to decide whether
             # to render that side's panel or show "(no record on this side)".
-            popup_entry.update({
-                "baseline_url": d.get("baseline_url"),
-                "target_url": d.get("target_url"),
-                "baseline_request": d.get("baseline_request"),
-                "baseline_response": d.get("baseline_response"),
-                "baseline_request_headers": d.get("baseline_request_headers"),
-                "baseline_response_headers": d.get("baseline_response_headers"),
-                "target_request": d.get("target_request"),
-                "target_response": d.get("target_response"),
-                "target_request_headers": d.get("target_request_headers"),
-                "target_response_headers": d.get("target_response_headers"),
-                "baseline_timestamp": d.get("baseline_timestamp"),
-                "target_timestamp": d.get("target_timestamp"),
-                "baseline_duration": d.get("baseline_duration"),
-                "target_duration": d.get("target_duration"),
-            })
+            popup_entry.update(
+                {
+                    "baseline_url": d.get("baseline_url"),
+                    "target_url": d.get("target_url"),
+                    "baseline_request": d.get("baseline_request"),
+                    "baseline_response": d.get("baseline_response"),
+                    "baseline_request_headers": d.get("baseline_request_headers"),
+                    "baseline_response_headers": d.get("baseline_response_headers"),
+                    "target_request": d.get("target_request"),
+                    "target_response": d.get("target_response"),
+                    "target_request_headers": d.get("target_request_headers"),
+                    "target_response_headers": d.get("target_response_headers"),
+                    "baseline_timestamp": d.get("baseline_timestamp"),
+                    "target_timestamp": d.get("target_timestamp"),
+                    "baseline_duration": d.get("baseline_duration"),
+                    "target_duration": d.get("target_duration"),
+                }
+            )
         popup_data.append(popup_entry)
 
         # Details cell — always clickable so users can open popup to manage rules
@@ -212,14 +210,17 @@ def generate_diff_html(
         # Hide the badge when there are no value diffs to count.
         badge_html = (
             f'<span class="diff-badge">{diff_count} diff{"s" if diff_count != 1 else ""}</span>'
-            if diff_count > 0 else ''
+            if diff_count > 0
+            else ""
         )
         has_visible_content = bool(badge_html)
-        empty_html = '' if has_visible_content else '<span class="row-empty" style="color:#555">—</span>'
+        empty_html = (
+            "" if has_visible_content else '<span class="row-empty" style="color:#555">—</span>'
+        )
         detail_cell = (
             f'<td class="detail-trigger" onclick="openPopup({idx})">'
             f'{badge_html}<span class="row-labels"></span>{empty_html}'
-            f'</td>'
+            f"</td>"
         )
 
         row_types = []
@@ -266,9 +267,7 @@ def generate_diff_html(
             )
         else:
             arrow = ("→" + str(d.get("target_status", ""))) if not d["status_match"] else ""
-            status_cell_html = (
-                f'<td style="color:{status_color}">{status_icon} {d.get("baseline_status", "")}{arrow}</td>'
-            )
+            status_cell_html = f'<td style="color:{status_color}">{status_icon} {d.get("baseline_status", "")}{arrow}</td>'
 
         # Query-diff column: +added / -removed query keys between paired URLs.
         # For one-sided rows show a dash since there's nothing to diff against.
@@ -277,7 +276,8 @@ def generate_diff_html(
         else:
             qd_html = _query_diff_html(d.get("baseline_url"), d.get("target_url"))
             querydiff_cell_html = (
-                f'<td class="cell-querydiff">{qd_html}</td>' if qd_html
+                f'<td class="cell-querydiff">{qd_html}</td>'
+                if qd_html
                 else '<td class="cell-querydiff" style="color:#666">·</td>'
             )
 
@@ -297,14 +297,14 @@ def generate_diff_html(
             f'<td class="cell-step">{_esc(step_display)}</td>'
             f'<td class="cell-timing">{timing_display}</td>'
             f'<td class="cell-delta {delta_class}">{delta_display}</td>'
-            f'<td>{d["method"]}</td>'
-            f'{path_cell_html}'
-            f'{querydiff_cell_html}'
-            f'{status_cell_html}'
+            f"<td>{d['method']}</td>"
+            f"{path_cell_html}"
+            f"{querydiff_cell_html}"
+            f"{status_cell_html}"
             f'<td class="cell-structure" style="color:{struct_color}">{struct_icon}</td>'
             f'<td class="cell-value" style="color:{val_color}">{val_icon}</td>'
-            f'{detail_cell}'
-            f'</tr>'
+            f"{detail_cell}"
+            f"</tr>"
         )
 
         diff_rows.append(row)
@@ -313,7 +313,12 @@ def generate_diff_html(
     # main diff_rows table with data-diff-types="endpoint". The legacy
     # separate "Endpoint Changes" table has been removed.
 
-    has_issues = summary["status_mismatches"] + summary["structure_mismatches"] + summary["missing_endpoints"] > 0
+    has_issues = (
+        summary["status_mismatches"]
+        + summary["structure_mismatches"]
+        + summary["missing_endpoints"]
+        > 0
+    )
     value_changes = summary.get("value_mismatches", 0)
     verdict_color = "#ef4444" if has_issues else "#4ade80"
     verdict = "REGRESSION DETECTED" if has_issues else "NO REGRESSION"
@@ -1302,20 +1307,20 @@ function applySort() {{
 <body>
 <h1>Scout Diff — {app}</h1>
 <div class="meta">
-  <span>Baseline: {baseline}{' — ' + baseline_ver if baseline_ver else ''}</span>
-  <span>Target: {target}{' — ' + target_ver if target_ver else ''}</span>
+  <span>Baseline: {baseline}{" — " + baseline_ver if baseline_ver else ""}</span>
+  <span>Target: {target}{" — " + target_ver if target_ver else ""}</span>
 </div>
 <div class="verdict">{verdict}</div>
 <div class="summary">
-  <span class="badge active" data-type="all" onclick="filterByType('all')">All ({summary['total_paired']})</span>
-  <span class="badge" data-type="status" style="color:#ef4444" onclick="filterByType('status')">{summary['status_mismatches']} status</span>
-  <span class="badge" data-type="structure" style="color:#ef4444" onclick="filterByType('structure')">{summary['structure_mismatches']} structure</span>
+  <span class="badge active" data-type="all" onclick="filterByType('all')">All ({summary["total_paired"]})</span>
+  <span class="badge" data-type="status" style="color:#ef4444" onclick="filterByType('status')">{summary["status_mismatches"]} status</span>
+  <span class="badge" data-type="structure" style="color:#ef4444" onclick="filterByType('structure')">{summary["structure_mismatches"]} structure</span>
   <span class="badge" data-type="value" style="color:#f59e0b" onclick="filterByType('value')">{value_changes} value</span>
-  <span class="badge" data-type="endpoint" style="color:#facc15" onclick="filterByType('endpoint')">{summary['missing_endpoints']} endpoint</span>
+  <span class="badge" data-type="endpoint" style="color:#facc15" onclick="filterByType('endpoint')">{summary["missing_endpoints"]} endpoint</span>
 </div>
 <div class="summary">
-  <span>Baseline: {summary.get('baseline_4xx', 0)} 4xx, {summary.get('baseline_5xx', 0)} 5xx</span>
-  <span>Target: {summary.get('target_4xx', 0)} 4xx, {summary.get('target_5xx', 0)} 5xx</span>
+  <span>Baseline: {summary.get("baseline_4xx", 0)} 4xx, {summary.get("baseline_5xx", 0)} 5xx</span>
+  <span>Target: {summary.get("target_4xx", 0)} 4xx, {summary.get("target_5xx", 0)} 5xx</span>
 </div>
 
 <div class="tabs" role="tablist">
@@ -1338,7 +1343,7 @@ function applySort() {{
       <input id="filter-input" type="text" placeholder="Filter…" oninput="filterRows(this.value);_updateFilterClear()"
         style="width:260px;padding:6px 28px 6px 10px;background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:13px;outline:none;">
       <button id="filter-clear" type="button" onclick="_clearFilterInput()" title="Clear filter"
-        style="display:none;position:absolute;right:4px;top:50%;transform:translateY(-50%);width:20px;height:20px;padding:0;border:none;background:transparent;color:#888;cursor:pointer;font-size:14px;line-height:1;border-radius:50%;">×</button>
+        style="display:none;position:absolute;right:4px;top:50%;transform:translateY(-50%);width:20px;height:20px;padding:0;border:none;background:transparent;color:#888;cursor:pointer;font-size:14px;line-height:1;border-radius:50%;">&times;</button>
     </div>
     <select id="sort-mode" onchange="applySort()"
       style="padding:6px 8px;background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:13px;"
@@ -1350,7 +1355,7 @@ function applySort() {{
     <span id="filter-count" style="font-size:12px;color:#888;"></span>
   </div>
   <table>
-  <thead><tr><th>#</th><th>Scenario</th><th>Step</th><th>ms</th><th title="target_duration - baseline_duration">Δms</th><th>Method</th><th>Path</th><th title="Added (+) / removed (−) query parameters between paired baseline and target URLs">Query</th><th>Status</th><th>Structure</th><th>Value</th><th>Details</th></tr></thead>
+  <thead><tr><th>#</th><th>Scenario</th><th>Step</th><th>ms</th><th title="target_duration - baseline_duration">Δms</th><th>Method</th><th>Path</th><th title="Added (+) / removed (&minus;) query parameters between paired baseline and target URLs">Query</th><th>Status</th><th>Structure</th><th>Value</th><th>Details</th></tr></thead>
   <tbody>
   {"".join(diff_rows) if diff_rows else '<tr><td colspan="12" style="color:#888">No endpoints recorded</td></tr>'}
   </tbody>

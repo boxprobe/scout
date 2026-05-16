@@ -1,0 +1,74 @@
+name: Bug report
+description: Report something that doesn't work as expected
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Please complete every field — incomplete
+        reports usually take a round-trip to triage.
+
+  - type: input
+    id: scout-version
+    attributes:
+      label: scout version
+      description: Output of `scout --version` or `pip show boxprobe-scout`
+      placeholder: "0.1.3"
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      description: Output of `python --version`
+      placeholder: "3.12.7"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other (describe in reproduction)
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: |
+        Minimal scenario file or CLI invocation that triggers the issue.
+        Trim to the smallest case that still fails.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened
+      description: Include the full traceback if there is one.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: |
+        Logs, screenshots, `result.json` snippets, diff report HTML — whatever
+        helps narrow it down.

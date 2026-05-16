@@ -27,7 +27,9 @@ def page(mock_pw_page):
 async def test_goto_relative(page, mock_pw_page):
     """Relative URL prepends base_url."""
     await page.goto("/login")
-    mock_pw_page.goto.assert_called_once_with("https://example.com/login", wait_until="networkidle")
+    mock_pw_page.goto.assert_called_once_with(
+        "https://example.com/login", wait_until="networkidle"
+    )
 
 
 async def test_goto_absolute(page, mock_pw_page):
@@ -63,8 +65,11 @@ async def test_click_with_registry(mock_pw_page):
     """Page with locator registry resolves rel locators correctly."""
     parent = Locator(name="form", tag="form", bbox=(100, 200, 400, 300))
     child = Locator(
-        name="submit", tag="button", bbox=(0, 0, 80, 40),
-        pos_type="dxy", parent="form",
+        name="submit",
+        tag="button",
+        bbox=(0, 0, 80, 40),
+        pos_type="dxy",
+        parent="form",
         pos_offset={"dx": 10, "dy": 10},
     )
     registry = {"form": parent, "submit": child}

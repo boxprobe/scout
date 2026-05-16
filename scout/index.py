@@ -1,4 +1,4 @@
-"""Local SQLite index — one row per run×scenario for metadata queries."""
+"""Local SQLite index — one row per (run, scenario) for metadata queries."""
 
 from __future__ import annotations
 

@@ -1,10 +1,41 @@
 [project]
-name = "scout"
+name = "boxprobe-scout"
 version = "0.1.3"
-description = "Black-box testing, pinpoint precision."
+description = "Open-source tool for UI-driven API regression testing."
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.14"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [
+    {name = "Jason Merx", email = "jasonmerx@boxprobe.com"},
+]
+maintainers = [
+    {name = "BoxProbe", email = "contact@boxprobe.com"},
+]
+keywords = [
+    "testing",
+    "regression-testing",
+    "api-testing",
+    "ui-testing",
+    "playwright",
+    "qa",
+    "diff",
+    "black-box",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Testing :: Acceptance",
+    "Topic :: Software Development :: Quality Assurance",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: OS Independent",
+]
 dependencies = [
     "click",
     "playwright",
@@ -15,6 +46,13 @@ dependencies = [
     "mitmproxy>=10",
     "aiohttp",
 ]
+
+[project.urls]
+Homepage = "https://boxprobe.com"
+Repository = "https://github.com/boxprobe/scout"
+Documentation = "https://github.com/boxprobe/scout#readme"
+Issues = "https://github.com/boxprobe/scout/issues"
+Changelog = "https://github.com/boxprobe/scout/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 server = [
@@ -46,8 +84,11 @@ scout = "scout.cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["scout"]
+
 [tool.ruff]
-target-version = "py314"
+target-version = "py311"
 line-length = 99
 
 [tool.ruff.lint]
@@ -66,10 +107,17 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
+# Test data (URLs, JSON literals, expected outputs) is often long by nature.
+"tests/**" = ["S101", "E501"]
+# Files with embedded HTML/JS/CSS/SQL template strings — line length is dominated
+# by template content where breaking lines hurts readability.
+"scout/matcher/diff_report.py" = ["E501"]
+"scout/matcher/diff_db.py" = ["E501"]
+"scout/report/verify_html.py" = ["E501"]
+"scout/report/html.py" = ["E501"]
 
 [tool.pyright]
-pythonVersion = "3.14"
+pythonVersion = "3.11"
 typeCheckingMode = "standard"
 
 [tool.pytest.ini_options]

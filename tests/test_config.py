@@ -5,19 +5,23 @@ from pathlib import Path
 
 import pytest
 
-from scout.config import AppConfig, load_app_config
+from scout.config import load_app_config
 
 
 def test_load_app_config_full(tmp_path: Path) -> None:
     """Full app.json with all fields loads correctly."""
     app_json = tmp_path / "app.json"
-    app_json.write_text(json.dumps({
-        "name": "Admin UI",
-        "web_base_url": "http://localhost:9000/app",
-        "api_base_url": "http://localhost:9000/admin",
-        "viewport_width": 1440,
-        "viewport_height": 900,
-    }))
+    app_json.write_text(
+        json.dumps(
+            {
+                "name": "Admin UI",
+                "web_base_url": "http://localhost:9000/app",
+                "api_base_url": "http://localhost:9000/admin",
+                "viewport_width": 1440,
+                "viewport_height": 900,
+            }
+        )
+    )
     config = load_app_config(tmp_path)
     assert config.name == "Admin UI"
     assert config.web_base_url == "http://localhost:9000/app"

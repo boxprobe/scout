@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest a new capability or behavior change
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        scout's scope is deliberately narrow: UI-driven API regression
+        testing. Features that broaden the scope need a strong case. Please
+        explain the use case before proposing a solution.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today, or what's painful?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: |
+        How would you want this to work? Concrete API sketches or CLI
+        examples are more useful than abstract descriptions.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you've tried, or other tools that solve this.
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This is about UI-driven API regression testing (not a generic test runner / load tester / contract testing feature)
+          required: true

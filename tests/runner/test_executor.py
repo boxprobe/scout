@@ -37,7 +37,7 @@ def _mock_playwright():
 
 async def test_execute_scenario_success(scenario):
     """Successful scenario returns success=True."""
-    mock_start, mock_pw, mock_browser, mock_page = _mock_playwright()
+    mock_start, mock_pw, mock_browser, _mock_page = _mock_playwright()
 
     with patch("scout.runner.executor.async_playwright") as mock_apw:
         mock_apw.return_value.start = mock_start

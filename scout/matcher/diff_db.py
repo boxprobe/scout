@@ -150,18 +150,40 @@ class DiffDB:
                 target_timestamp, target_duration,
                 header_match, header_diff)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (scenario, baseline_record_id, target_record_id, method, path,
-             step_seq, step_label, baseline_offset_ms, target_offset_ms,
-             int(status_match), baseline_status, target_status,
-             int(structure_match), diff_summary,
-             int(value_match), value_diff,
-             baseline_url, baseline_request, baseline_response,
-             baseline_request_headers, baseline_response_headers,
-             baseline_timestamp, baseline_duration,
-             target_url, target_request, target_response,
-             target_request_headers, target_response_headers,
-             target_timestamp, target_duration,
-             int(header_match), header_diff),
+            (
+                scenario,
+                baseline_record_id,
+                target_record_id,
+                method,
+                path,
+                step_seq,
+                step_label,
+                baseline_offset_ms,
+                target_offset_ms,
+                int(status_match),
+                baseline_status,
+                target_status,
+                int(structure_match),
+                diff_summary,
+                int(value_match),
+                value_diff,
+                baseline_url,
+                baseline_request,
+                baseline_response,
+                baseline_request_headers,
+                baseline_response_headers,
+                baseline_timestamp,
+                baseline_duration,
+                target_url,
+                target_request,
+                target_response,
+                target_request_headers,
+                target_response_headers,
+                target_timestamp,
+                target_duration,
+                int(header_match),
+                header_diff,
+            ),
         )
         self._conn.commit()
 
@@ -190,27 +212,26 @@ class DiffDB:
         return [dict(r) for r in rows]
 
     def get_missing_endpoints(self) -> list[dict[str, Any]]:
-        rows = self._conn.execute(
-            "SELECT * FROM missing_endpoints ORDER BY id"
-        ).fetchall()
+        rows = self._conn.execute("SELECT * FROM missing_endpoints ORDER BY id").fetchall()
         return [dict(r) for r in rows]
 
     def summary(self) -> dict[str, int]:
         # Missing endpoints now live in endpoint_diffs with one side's record_id
         # NULL. Exclude these from status/structure/value mismatch counts so
         # they don't double-count: they're "endpoint changes", not body diffs.
+        # SQL f-string OK: paired_where is a hardcoded local string, not user input.
         paired_where = "baseline_record_id IS NOT NULL AND target_record_id IS NOT NULL"
         paired = self._conn.execute(
-            f"SELECT COUNT(*) FROM endpoint_diffs WHERE {paired_where}"
+            f"SELECT COUNT(*) FROM endpoint_diffs WHERE {paired_where}"  # noqa: S608
         ).fetchone()[0]
         status_mm = self._conn.execute(
-            f"SELECT COUNT(*) FROM endpoint_diffs WHERE status_match = 0 AND {paired_where}"
+            f"SELECT COUNT(*) FROM endpoint_diffs WHERE status_match = 0 AND {paired_where}"  # noqa: S608
         ).fetchone()[0]
         struct_mm = self._conn.execute(
-            f"SELECT COUNT(*) FROM endpoint_diffs WHERE structure_match = 0 AND {paired_where}"
+            f"SELECT COUNT(*) FROM endpoint_diffs WHERE structure_match = 0 AND {paired_where}"  # noqa: S608
         ).fetchone()[0]
         value_mm = self._conn.execute(
-            f"SELECT COUNT(*) FROM endpoint_diffs WHERE value_match = 0 AND {paired_where}"
+            f"SELECT COUNT(*) FROM endpoint_diffs WHERE value_match = 0 AND {paired_where}"  # noqa: S608
         ).fetchone()[0]
         missing = self._conn.execute(
             "SELECT COUNT(*) FROM endpoint_diffs WHERE baseline_record_id IS NULL OR target_record_id IS NULL"

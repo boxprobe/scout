@@ -13,6 +13,7 @@ from scout.matcher.normalize import paths_match, query_key_set
 @dataclass
 class AlignedPair:
     """A paired endpoint comparison unit."""
+
     baseline: dict[str, Any] | None
     target: dict[str, Any] | None
     method: str
@@ -105,10 +106,14 @@ def align_records(
                 if j in paired_t:
                     continue
                 if bk == tk:
-                    result.append(AlignedPair(
-                        baseline=b_list[i], target=t_list[j],
-                        method=method, path=path,
-                    ))
+                    result.append(
+                        AlignedPair(
+                            baseline=b_list[i],
+                            target=t_list[j],
+                            method=method,
+                            path=path,
+                        )
+                    )
                     paired_b.add(i)
                     paired_t.add(j)
                     break
@@ -120,13 +125,21 @@ def align_records(
         leftover_t = [t_list[j] for j in range(len(t_list)) if j not in paired_t]
         n = min(len(leftover_b), len(leftover_t))
         for k_idx in range(n):
-            result.append(AlignedPair(
-                baseline=leftover_b[k_idx], target=leftover_t[k_idx],
-                method=method, path=path,
-            ))
+            result.append(
+                AlignedPair(
+                    baseline=leftover_b[k_idx],
+                    target=leftover_t[k_idx],
+                    method=method,
+                    path=path,
+                )
+            )
         for k_idx in range(n, len(leftover_b)):
-            result.append(AlignedPair(baseline=leftover_b[k_idx], target=None, method=method, path=path))
+            result.append(
+                AlignedPair(baseline=leftover_b[k_idx], target=None, method=method, path=path)
+            )
         for k_idx in range(n, len(leftover_t)):
-            result.append(AlignedPair(baseline=None, target=leftover_t[k_idx], method=method, path=path))
+            result.append(
+                AlignedPair(baseline=None, target=leftover_t[k_idx], method=method, path=path)
+            )
 
     return result

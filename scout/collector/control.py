@@ -33,8 +33,10 @@ class ControlServer:
         await self._runner.setup()
         self._site = web.TCPSite(self._runner, "127.0.0.1", self._requested_port)
         await self._site.start()
-        # Resolve actual port (important when port=0)
-        sock = self._site._server.sockets[0]
+        # Resolve actual port (important when port=0). Reaches into aiohttp
+        # internals because TCPSite exposes no public accessor for the bound
+        # socket; safe in practice since this runs immediately after start().
+        sock = self._site._server.sockets[0]  # pyright: ignore[reportAttributeAccessIssue, reportOptionalMemberAccess]
         self.port = sock.getsockname()[1]
 
     async def stop(self) -> None:
@@ -62,6 +64,7 @@ class ControlServer:
         db_path = body.get("db_path")
         if db_path:
             from scout.collector.db import RecordingDB
+
             # Close previous DB if it was created per-run
             if self._db is not None:
                 self._db.close()
@@ -103,7 +106,9 @@ class ControlServer:
         return web.json_response({"ok": True})
 
     async def _handle_status(self, request: web.Request) -> web.Response:
-        return web.json_response({
-            "active": len(self._sessions) > 0,
-            "sessions": self._sessions,
-        })
+        return web.json_response(
+            {
+                "active": len(self._sessions) > 0,
+                "sessions": self._sessions,
+            }
+        )

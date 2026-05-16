@@ -3,8 +3,6 @@
 import json
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from scout.runner.executor import (
     ExecutionResult,
     _derive_scenario_path,
@@ -78,12 +76,12 @@ async def test_execute_batch_writes_results(tmp_path):
         d = tmp_path / "scenarios" / name
         d.mkdir(parents=True)
         (d / "test.py").write_text(
-            'from scout.runner import Scenario\n'
+            "from scout.runner import Scenario\n"
             f'scenario = Scenario(name="{name}", '
             'base_url="http://localhost", viewport_width=1280)\n'
-            '@scenario.test\n'
-            'async def test(page):\n'
-            '    pass\n'
+            "@scenario.test\n"
+            "async def test(page):\n"
+            "    pass\n"
         )
 
     test_paths = [
@@ -92,13 +90,11 @@ async def test_execute_batch_writes_results(tmp_path):
     ]
     results_dir = tmp_path / ".scout" / "results"
 
-    mock_start, mock_pw, mock_browser, mock_page = _mock_playwright()
+    mock_start, mock_pw, mock_browser, _mock_page = _mock_playwright()
 
     with patch("scout.runner.executor.async_playwright") as mock_apw:
         mock_apw.return_value.start = mock_start
-        results = await execute_batch(
-            test_paths, headless=True, results_dir=results_dir
-        )
+        results = await execute_batch(test_paths, headless=True, results_dir=results_dir)
 
     # Both scenarios executed
     assert len(results) == 2

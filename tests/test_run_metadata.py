@@ -19,9 +19,14 @@ def test_build_metadata_full_context() -> None:
     git = _full_git()
 
     meta = build_metadata(
-        config=config, git=git, scenario="tests/login.py", env="staging",
-        web_version="2.3.1", api_version="2.3.1",
-        web_commit="abc123", api_commit="def456",
+        config=config,
+        git=git,
+        scenario="tests/login.py",
+        env="staging",
+        web_version="2.3.1",
+        api_version="2.3.1",
+        web_commit="abc123",
+        api_commit="def456",
     )
 
     assert meta.scenario == "tests/login.py"
@@ -72,8 +77,11 @@ def test_api_defaults_to_web() -> None:
     git = _full_git()
 
     meta = build_metadata(
-        config=config, git=git, scenario="s.py",
-        web_version="2.14.0", web_commit="abc123",
+        config=config,
+        git=git,
+        scenario="s.py",
+        web_version="2.14.0",
+        web_commit="abc123",
     )
 
     assert meta.web_version == "2.14.0"

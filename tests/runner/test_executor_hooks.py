@@ -15,11 +15,11 @@ def scenario_file(tmp_path: Path) -> Path:
     (tmp_path / "app.json").write_text('{"name":"test","web_base_url":"http://localhost"}')
     test_py = scenarios / "test.py"
     test_py.write_text(
-        'from scout.runner import Scenario, Page\n'
+        "from scout.runner import Scenario, Page\n"
         'scenario = Scenario(name="test", base_url="http://localhost")\n'
-        '@scenario.test\n'
-        'async def test(page: Page):\n'
-        '    pass\n'
+        "@scenario.test\n"
+        "async def test(page: Page):\n"
+        "    pass\n"
     )
     return test_py
 

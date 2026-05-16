@@ -58,17 +58,19 @@ def generate_verify_html(
     for i, (path, result) in enumerate(results.items()):
         scenario_dir = results_dir / path
         shots = _collect_screenshots(scenario_dir)
-        scenarios.append({
-            "idx": i,
-            "path": path,
-            "display_name": path.replace("/", "."),
-            "success": result.success,
-            "status": "PASSED" if result.success else "FAILED",
-            "color": "#4ade80" if result.success else "#ef4444",
-            "duration": f"{result.duration_ms:,}ms",
-            "errors": result.errors,
-            "shots": shots,
-        })
+        scenarios.append(
+            {
+                "idx": i,
+                "path": path,
+                "display_name": path.replace("/", "."),
+                "success": result.success,
+                "status": "PASSED" if result.success else "FAILED",
+                "color": "#4ade80" if result.success else "#ef4444",
+                "duration": f"{result.duration_ms:,}ms",
+                "errors": result.errors,
+                "shots": shots,
+            }
+        )
 
     # Sidebar
     sidebar_items = []
@@ -79,7 +81,7 @@ def generate_verify_html(
             f'<span class="dot" style="background:{s["color"]}"></span>'
             f'<span class="nav-name">{s["display_name"]}</span>'
             f'<span class="nav-dur">{s["duration"]}</span>'
-            f'</button>'
+            f"</button>"
         )
 
     # Panels — each is a thumbnail grid
@@ -97,7 +99,7 @@ def generate_verify_html(
                 f'<div class="thumb" onclick="openLightbox({s["idx"]},{j})">'
                 f'<img src="{uri}" loading="lazy">'
                 f'<div class="thumb-label">{shot["label"]}</div>'
-                f'</div>'
+                f"</div>"
             )
 
         no_shots = '<div class="no-shots">No screenshots</div>' if not thumbs else ""
@@ -105,14 +107,14 @@ def generate_verify_html(
         panels.append(
             f'<div class="panel" data-idx="{s["idx"]}">'
             f'<div class="panel-header">'
-            f'<h2>{s["display_name"]}</h2>'
+            f"<h2>{s['display_name']}</h2>"
             f'<span class="badge" style="color:{s["color"]}">{s["status"]}</span>'
             f'<span class="dur">{s["duration"]}</span>'
-            f'</div>'
-            f'{errors_html}'
+            f"</div>"
+            f"{errors_html}"
             f'<div class="grid">{"".join(thumbs)}</div>'
-            f'{no_shots}'
-            f'</div>'
+            f"{no_shots}"
+            f"</div>"
         )
 
     # Build JS image index: scenarios[i] = [uri0, uri1, ...]
@@ -128,7 +130,7 @@ def generate_verify_html(
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Scout Verify — {app_name or 'report'}</title>
+<title>Scout Verify — {app_name or "report"}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -209,7 +211,7 @@ def generate_verify_html(
 <body>
 
 <div class="header">
-  <h1>Scout Verify{' — ' + app_name if app_name else ''}</h1>
+  <h1>Scout Verify{" — " + app_name if app_name else ""}</h1>
   <div class="pills">
     <span class="pill" style="color:#4ade80">{passed} passed</span>
     <span class="pill" style="color:#ef4444">{failed} failed</span>

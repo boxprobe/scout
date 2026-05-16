@@ -14,7 +14,7 @@ def test_generate_junit_all_pass(tmp_path: Path) -> None:
     }
     out = tmp_path / "junit.xml"
     generate_junit(results, out, run_id="run-001")
-    tree = ET.parse(out)
+    tree = ET.parse(out)  # noqa: S314  parsing our own generated output, not untrusted input
     suite = tree.getroot()
     assert suite.tag == "testsuite"
     assert suite.get("tests") == "2"
@@ -24,11 +24,13 @@ def test_generate_junit_all_pass(tmp_path: Path) -> None:
 
 def test_generate_junit_with_failure(tmp_path: Path) -> None:
     results = {
-        "auth/login": ExecutionResult(success=False, errors=["Element not found"], duration_ms=300),
+        "auth/login": ExecutionResult(
+            success=False, errors=["Element not found"], duration_ms=300
+        ),
     }
     out = tmp_path / "junit.xml"
     generate_junit(results, out, run_id="run-001")
-    tree = ET.parse(out)
+    tree = ET.parse(out)  # noqa: S314  parsing our own generated output, not untrusted input
     case = tree.getroot().find("testcase")
     failure = case.find("failure")
     assert failure is not None

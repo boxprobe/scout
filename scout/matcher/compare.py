@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from scout.matcher.noise import (
-    DiffIgnoreConfig,
     IgnoreRule,
     KnownChange,
     filter_body,
@@ -20,6 +19,7 @@ from scout.matcher.noise import (
 @dataclass
 class EndpointDiff:
     """Result of comparing one endpoint between baseline and target."""
+
     status_match: bool
     baseline_status: int | None = None
     target_status: int | None = None
@@ -33,22 +33,24 @@ class EndpointDiff:
 
 # Headers that are expected to differ between runs / environments and carry
 # no test-signal value. Kept lowercase since HTTP header names are case-insensitive.
-DEFAULT_HEADER_IGNORE: frozenset[str] = frozenset({
-    "date",
-    "etag",
-    "if-none-match",
-    "last-modified",
-    "x-request-id",
-    "x-trace-id",
-    "x-correlation-id",
-    "x-runtime",
-    "server",
-    "x-powered-by",
-    "set-cookie",
-    "cookie",
-    "content-length",  # auto-derived from body
-    "host",            # always differs between environments
-})
+DEFAULT_HEADER_IGNORE: frozenset[str] = frozenset(
+    {
+        "date",
+        "etag",
+        "if-none-match",
+        "last-modified",
+        "x-request-id",
+        "x-trace-id",
+        "x-correlation-id",
+        "x-runtime",
+        "server",
+        "x-powered-by",
+        "set-cookie",
+        "cookie",
+        "content-length",  # auto-derived from body
+        "host",  # always differs between environments
+    }
+)
 
 
 def _parse_headers(raw: str | None) -> dict[str, str]:
@@ -277,7 +279,7 @@ def compare_pair(
         )
 
     # One JSON, one not
-    if type(b_body) != type(t_body):
+    if type(b_body) is not type(t_body):
         return EndpointDiff(
             status_match=status_match,
             baseline_status=b_status,
@@ -309,8 +311,11 @@ def compare_pair(
     method = baseline.get("method", "") or target.get("method", "")
     if known_changes and target_version and diff_summary:
         filtered_for_known = filter_known_changes(
-            diff_summary, known_changes, target_version,
-            method=method, api_path=api_path,
+            diff_summary,
+            known_changes,
+            target_version,
+            method=method,
+            api_path=api_path,
         )
         structure_match = not bool(filtered_for_known.strip())
 
@@ -324,8 +329,11 @@ def compare_pair(
 
     if known_changes and target_version and value_diff:
         value_diff = filter_known_changes(
-            value_diff, known_changes, target_version,
-            method=method, api_path=api_path,
+            value_diff,
+            known_changes,
+            target_version,
+            method=method,
+            api_path=api_path,
         )
 
     value_match = not bool(value_diff)

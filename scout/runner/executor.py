@@ -108,7 +108,7 @@ async def _run_scenario_with_browser(
         await scenario._test_fn(page)  # type: ignore[misc]
         # Final screenshot — capture end state after all steps + waits
         if screenshot_dir is not None:
-            screenshot_dir.mkdir(parents=True, exist_ok=True)
+            screenshot_dir.mkdir(parents=True, exist_ok=True)  # noqa: ASYNC240  local mkdir is fast
             await pw_page.screenshot(
                 path=screenshot_dir / "final.png",
             )
@@ -118,7 +118,7 @@ async def _run_scenario_with_browser(
         duration = int((time.monotonic() - t0) * 1000)
         # Capture error state screenshot
         if screenshot_dir is not None:
-            screenshot_dir.mkdir(parents=True, exist_ok=True)
+            screenshot_dir.mkdir(parents=True, exist_ok=True)  # noqa: ASYNC240  local mkdir is fast
             await pw_page.screenshot(
                 path=screenshot_dir / "error.png",
             )
@@ -153,6 +153,7 @@ async def execute_file(test_path: str | object, *, headless: bool = True) -> Exe
 
 def _scout_version() -> str:
     from importlib.metadata import PackageNotFoundError, version
+
     try:
         return version("scout")
     except PackageNotFoundError:
@@ -257,7 +258,9 @@ async def execute_batch(
             # Tag requests with scenario path for proxy session attribution
             extra_headers = {"X-Scout-Session": scenario_path} if proxy else None
             result = await _run_scenario_with_browser(
-                loaded, browser, screenshot_dir=ss_dir,
+                loaded,
+                browser,
+                screenshot_dir=ss_dir,
                 extra_http_headers=extra_headers,
                 session_id=scenario_path if proxy else None,
             )
@@ -273,10 +276,9 @@ async def execute_batch(
     )
 
     try:
-        await asyncio.gather(*[
-            _run_one(scenario_path, loaded)
-            for scenario_path, loaded in runnable
-        ])
+        await asyncio.gather(
+            *[_run_one(scenario_path, loaded) for scenario_path, loaded in runnable]
+        )
     finally:
         await browser.close()
         await pw_instance.stop()

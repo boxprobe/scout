@@ -84,9 +84,7 @@ class Page:
 
     async def _clear_marker(self) -> None:
         """Remove the click target marker."""
-        await self._page.evaluate(
-            "document.getElementById('__scout-marker')?.remove()"
-        )
+        await self._page.evaluate("document.getElementById('__scout-marker')?.remove()")
 
     async def set_step(self, seq: int) -> None:
         """Update the X-Scout-Session header to include step sequence number.
@@ -95,9 +93,11 @@ class Page:
         so the recording proxy can associate API calls with specific steps.
         """
         if self._session_id:
-            await self._page.set_extra_http_headers({
-                "X-Scout-Session": f"{self._session_id}:{seq}",
-            })
+            await self._page.set_extra_http_headers(
+                {
+                    "X-Scout-Session": f"{self._session_id}:{seq}",
+                }
+            )
 
     async def goto(self, url: str) -> None:
         """Navigate to a URL. Relative paths are prepended with base_url."""
@@ -145,7 +145,8 @@ class Page:
             """([x, y, val]) => {
                 const el = document.elementFromPoint(x, y);
                 if (!el || el.tagName !== 'SELECT') throw new Error('No <select> at target');
-                const nativeSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+                const proto = HTMLSelectElement.prototype;
+                const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
                 if (nativeSetter) nativeSetter.call(el, val);
                 else el.value = val;
                 el.dispatchEvent(new Event('input', { bubbles: true }));

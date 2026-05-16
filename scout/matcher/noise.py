@@ -4,41 +4,47 @@ but are not meaningful regressions (timestamps, IDs, mock-generated values)."""
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from fnmatch import fnmatch
 from typing import Any
+
+from scout.mock_vars import MOCK_DETECTORS as _MOCK_DETECTORS
 
 
 @dataclass(frozen=True)
 class IgnoreRule:
     """A single noise ignore rule."""
-    fields: tuple[str, ...] = ()       # simple names, any depth
-    paths: tuple[str, ...] = ()        # $.path.expressions with [*]
+
+    fields: tuple[str, ...] = ()  # simple names, any depth
+    paths: tuple[str, ...] = ()  # $.path.expressions with [*]
     value_types: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class StatusOnlyRule:
     """Match (scenario, method, path, step_seq) — only compare status_code."""
-    scenario: str    # glob pattern, "*" matches all
-    method: str      # HTTP method glob, "*" matches all
-    path: str        # glob pattern for API path
-    step_seq: str    # "*" | "3" | "1-5" range
+
+    scenario: str  # glob pattern, "*" matches all
+    method: str  # HTTP method glob, "*" matches all
+    path: str  # glob pattern for API path
+    step_seq: str  # "*" | "3" | "1-5" range
 
 
 @dataclass(frozen=True)
 class KnownChange:
     """A known structural change tied to a version."""
-    endpoint: str      # "METHOD /path/pattern", e.g. "POST /admin/product-categories/*"
-    path: str          # $.field.path expression
-    change: str        # "added" | "removed"
-    since: str         # semver string, e.g. "2.14.0"
+
+    endpoint: str  # "METHOD /path/pattern", e.g. "POST /admin/product-categories/*"
+    path: str  # $.field.path expression
+    change: str  # "added" | "removed"
+    since: str  # semver string, e.g. "2.14.0"
     note: str = ""
 
 
 @dataclass(frozen=True)
 class DiffIgnoreConfig:
     """Noise reduction config loaded from diff_ignore.json."""
+
     fields: tuple[str, ...] = ()
     paths: tuple[str, ...] = ()
     value_types: tuple[str, ...] = ()
@@ -50,7 +56,11 @@ class DiffIgnoreConfig:
     header_ignore: tuple[str, ...] = ()
 
     def is_status_only(
-        self, scenario: str, method: str, path: str, step_seq: int | None,
+        self,
+        scenario: str,
+        method: str,
+        path: str,
+        step_seq: int | None,
     ) -> bool:
         """Return True if (scenario, method, path, step_seq) should only compare status_code."""
         for rule in self.status_only:
@@ -271,29 +281,19 @@ def _extract_diff_path(line: str) -> str | None:
 
 # -- Value type detectors --
 
-from scout.mock_vars import MOCK_DETECTORS as _MOCK_DETECTORS
-
 # Built-in type detectors (non-mock patterns)
 _BUILTIN_DETECTORS: dict[str, re.Pattern[str]] = {
     "uuid": re.compile(
         r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
         re.IGNORECASE,
     ),
-    "iso_timestamp": re.compile(
-        r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}"
-    ),
+    "iso_timestamp": re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}"),
     "unix_timestamp": re.compile(
         r"^1[6-9]\d{8}$"  # 2020-2033 range in seconds
     ),
-    "date": re.compile(
-        r"^\d{4}-\d{2}-\d{2}$"
-    ),
-    "hex_token": re.compile(
-        r"^[a-z]{2,}_[0-9a-f]{40,}$"
-    ),
-    "prefixed_id": re.compile(
-        r"^[a-z]{2,}_{1}[0-9A-Za-z]{20,}$"
-    ),
+    "date": re.compile(r"^\d{4}-\d{2}-\d{2}$"),
+    "hex_token": re.compile(r"^[a-z]{2,}_[0-9a-f]{40,}$"),
+    "prefixed_id": re.compile(r"^[a-z]{2,}_{1}[0-9A-Za-z]{20,}$"),
 }
 
 # Merge: built-in + mock detectors from mock_vars registry
@@ -325,9 +325,7 @@ def filter_body(obj: Any, rule: IgnoreRule) -> Any:
         return obj
     if isinstance(obj, dict):
         return {
-            k: filter_body(v, rule)
-            for k, v in obj.items()
-            if not _field_ignored(k, rule.fields)
+            k: filter_body(v, rule) for k, v in obj.items() if not _field_ignored(k, rule.fields)
         }
     if isinstance(obj, list):
         return [filter_body(item, rule) for item in obj]
@@ -409,14 +407,16 @@ def load_diff_ignore(data: dict[str, Any] | None) -> DiffIgnoreConfig:
                     ov_paths.append(f)
                 else:
                     ov_fields.append(f)
-            overrides.append((
-                pattern,
-                IgnoreRule(
-                    fields=tuple(ov_fields),
-                    paths=tuple(ov_paths),
-                    value_types=tuple(ov.get("value_types", [])),
-                ),
-            ))
+            overrides.append(
+                (
+                    pattern,
+                    IgnoreRule(
+                        fields=tuple(ov_fields),
+                        paths=tuple(ov_paths),
+                        value_types=tuple(ov.get("value_types", [])),
+                    ),
+                )
+            )
 
     # endpoint_ignore: the user-facing per-endpoint ignore rule type. Each
     # entry is {"endpoint": "METHOD /path-pattern", "path": "$.json.path"}
@@ -434,16 +434,16 @@ def load_diff_ignore(data: dict[str, Any] | None) -> DiffIgnoreConfig:
         elif " " not in endpoint:
             # Accept bare path patterns by defaulting the method to wildcard
             endpoint = "* " + endpoint
-        is_path_expr = path.startswith("$") or (
-            path.startswith("!") and path[1:2] == "$"
+        is_path_expr = path.startswith("$") or (path.startswith("!") and path[1:2] == "$")
+        overrides.append(
+            (
+                endpoint,
+                IgnoreRule(
+                    paths=(path,) if is_path_expr else (),
+                    fields=() if is_path_expr else (path,),
+                ),
+            )
         )
-        overrides.append((
-            endpoint,
-            IgnoreRule(
-                paths=(path,) if is_path_expr else (),
-                fields=() if is_path_expr else (path,),
-            ),
-        ))
 
     from scout.matcher.normalize import _is_id_segment
 
@@ -468,30 +468,32 @@ def load_diff_ignore(data: dict[str, Any] | None) -> DiffIgnoreConfig:
         if raw_path != "*" and "*" not in raw_path:
             segments = raw_path.split("/")
             raw_path = "/".join("*" if s and _is_id_segment(s) else s for s in segments)
-        status_only.append(StatusOnlyRule(
-            scenario=so.get("scenario", "*"),
-            method=raw_method,
-            path=raw_path,
-            step_seq=str(so.get("step_seq", "*")),
-        ))
+        status_only.append(
+            StatusOnlyRule(
+                scenario=so.get("scenario", "*"),
+                method=raw_method,
+                path=raw_path,
+                step_seq=str(so.get("step_seq", "*")),
+            )
+        )
 
     known_changes: list[KnownChange] = []
     for kc in data.get("known_changes", []):
         change = kc.get("change", "")
         if change in ("added", "removed") and kc.get("path") and kc.get("since"):
-            known_changes.append(KnownChange(
-                endpoint=kc.get("endpoint", "*"),
-                path=kc["path"],
-                change=change,
-                since=kc["since"],
-                note=kc.get("note", ""),
-            ))
+            known_changes.append(
+                KnownChange(
+                    endpoint=kc.get("endpoint", "*"),
+                    path=kc["path"],
+                    change=change,
+                    since=kc["since"],
+                    note=kc.get("note", ""),
+                )
+            )
 
     # Response-header ignore list (extends DEFAULT_HEADER_IGNORE in compare.py).
     # Lowercase here so comparison can be case-insensitive without per-call work.
-    header_ignore = tuple(
-        str(h).lower() for h in data.get("header_ignore", []) if h
-    )
+    header_ignore = tuple(str(h).lower() for h in data.get("header_ignore", []) if h)
 
     return DiffIgnoreConfig(
         fields=tuple(simple_fields),

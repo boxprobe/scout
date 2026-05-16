@@ -1,6 +1,6 @@
 """Tests for matcher/compare.py — API record comparison."""
 
-from scout.matcher.compare import compare_pair, EndpointDiff
+from scout.matcher.compare import compare_pair
 
 
 def test_identical_responses() -> None:
